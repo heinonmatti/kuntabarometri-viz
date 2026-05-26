@@ -1,5 +1,9 @@
 # kuntabarometri-viz
 
+Live: <https://kuntabarometri.mattiheino.com> (deployed via Cloudflare Pages, content tracked in `site/`).
+
+
+
 Time-series visualisations of the Suomen Yrittäjät **Kuntabarometri** (Municipal Barometer) survey, focused on **Hamina** against the rest of Finland and selected regional peers (Kotka, Kouvola).
 
 Source: <https://survey.taloustutkimus.fi/dashboard/kuntabarometri_2026/>

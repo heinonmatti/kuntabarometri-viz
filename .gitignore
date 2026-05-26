@@ -11,9 +11,11 @@ output/by-sort/
 data/processed/*.csv
 !data/processed/.gitkeep
 
-# Cloudflare Pages deploy bundle is regenerated from output/
-site/
+# Local-only deploy artefacts
+kuntabarometri-site.zip
 
 # Wrangler internal files
 .wrangler/
 node_modules/
+
+# Note: site/ IS tracked - Cloudflare Pages serves from it.

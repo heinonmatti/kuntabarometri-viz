@@ -48,6 +48,7 @@ class Row:
     sd: float | None = None
     se: float | None = None
     ci95: float | None = None
+    scale: str = "likert_1_5"  # also: "nps" (range -100..+100), "other"
 
 
 def _mean_sd_se_from_counts(counts: dict[int, float]) -> tuple[float | None, float | None, float | None, float | None, int]:
@@ -93,11 +94,7 @@ def _category_stats(chart: dict) -> list[tuple[str, dict[int, float]]]:
 def _safe_score(name) -> int | None:
     """Extract the leading Likert score from a series label.
 
-    Names take several forms across themes:
-      "5"                                  -> 5
-      "5 Kehittynyt merkittävästi ..."     -> 5
-      "En osaa sanoa"                      -> None (excluded from mean)
-      "Not asked"                          -> None
+    Accepts 1-5 (standard Likert).
     """
     if name is None:
         return None
@@ -105,6 +102,17 @@ def _safe_score(name) -> int | None:
     if not m:
         return None
     return int(m.group(1))
+
+
+def _safe_nps_score(name) -> int | None:
+    """Extract a 0–10 NPS rating from a series label."""
+    if name is None:
+        return None
+    m = re.match(r"^\s*(\d{1,2})\b", str(name))
+    if not m:
+        return None
+    s = int(m.group(1))
+    return s if 0 <= s <= 10 else None
 
 
 def _kokomaa_stats(category_stats: list[tuple[str, dict[int, float]]]) -> tuple[float | None, float | None, float | None, float | None, int]:
@@ -166,37 +174,73 @@ def _strip_year_suffix(s: str) -> str:
     return TRAILING_YEAR_PATTERN.sub("", s).strip()
 
 
-def _pptx_chart_focal_stats(chart) -> tuple[float | None, float | None, float | None, float | None, int, str | None]:
-    """Return (mean, sd, se, ci95, n, focal_cat_label) for the first category.
+def _nps_stats_from_counts_0to10(counts: dict[int, float]) -> tuple[float, float, float, float, int]:
+    """Net Promoter Score from a 0–10 rating distribution.
 
-    PPTX bar-stacked charts have one series per Likert score (named
-    "5 Kehittynyt ...", "4 Kehittynyt ...", ..., "1 Kehittynyt ...") plus
-    optionally an "En osaa sanoa" series. Each series.data[i] is a
-    percentage value summing to 100 across all series for category i.
+    Each respondent contributes +1 (promoter, 9–10), 0 (passive, 7–8) or
+    −1 (detractor, 0–6). NPS = mean × 100, reported on the −100…+100 axis.
+    SE is computed from the per-respondent {−1, 0, +1} distribution.
+    """
+    n_total = sum(counts.values())
+    if n_total <= 0:
+        return None, None, None, None, 0
+    nps_values: dict[float, float] = {}
+    for rating, cnt in counts.items():
+        v = 1.0 if rating >= 9 else (-1.0 if rating <= 6 else 0.0)
+        nps_values[v] = nps_values.get(v, 0) + cnt
+    mean_per_r = sum(v * c for v, c in nps_values.items()) / n_total
+    variance = sum(((v - mean_per_r) ** 2) * c for v, c in nps_values.items()) / n_total
+    sd_per_r = variance ** 0.5
+    n_int = int(round(n_total))
+    se_per_r = sd_per_r / (n_int ** 0.5) if n_int > 0 else None
+    # Scale to NPS units (×100)
+    return (
+        mean_per_r * 100,
+        sd_per_r * 100,
+        se_per_r * 100 if se_per_r is not None else None,
+        1.96 * se_per_r * 100 if se_per_r is not None else None,
+        n_int,
+    )
 
-    We recover counts by multiplying percentages with the total n parsed
-    from the category label '(n = X)'. We then compute the mean, SD, SE
-    and 95 % CI ourselves rather than trusting the displayed '(ka=...)'
-    rounding.
+
+def _pptx_chart_focal_stats(chart) -> tuple[float | None, float | None, float | None, float | None, int, str | None, str]:
+    """Return (mean, sd, se, ci95, n, focal_cat_label, scale) for the first category.
+
+    PPTX bar-stacked charts have one series per rating score. For 1–5 Likert
+    questions the series are named "5 Kehittynyt ...", …, "1 Kehittynyt ...".
+    For the single 0–10 NPS question the series are "10 Suosittelisin
+    varmasti", "9", …, "0 En suosittelisi lainkaan". We detect the scale by
+    the set of leading score numbers and compute mean/SD/SE/CI
+    appropriately. The returned ``scale`` is one of "likert_1_5" or "nps".
     """
     try:
         plot = chart.plots[0]
         cats = [str(c) for c in plot.categories]
     except Exception:
-        return None, None, None, None, 0, None
+        return None, None, None, None, 0, None, "likert_1_5"
     if not cats:
-        return None, None, None, None, 0, None
+        return None, None, None, None, 0, None, "likert_1_5"
 
     focal_idx = 0
     cat = cats[focal_idx]
     n_match = re.search(r"n\s*=\s*([\d\s]+)", cat)
     n_total = int(n_match.group(1).replace(" ", "")) if n_match else 0
     if n_total == 0:
-        return None, None, None, None, 0, cat
+        return None, None, None, None, 0, cat, "likert_1_5"
+
+    # Detect scale by series names
+    score_set: set[int] = set()
+    for s in chart.series:
+        s_nps = _safe_nps_score(s.name)
+        if s_nps is not None:
+            score_set.add(s_nps)
+    is_nps = max(score_set, default=-1) >= 6 and min(score_set, default=99) == 0
+    scale = "nps" if is_nps else "likert_1_5"
+    parser = _safe_nps_score if is_nps else _safe_score
 
     counts: dict[int, float] = {}
     for s in chart.series:
-        score = _safe_score(s.name)
+        score = parser(s.name)
         if score is None:
             continue
         try:
@@ -207,15 +251,16 @@ def _pptx_chart_focal_stats(chart) -> tuple[float | None, float | None, float | 
             continue
         pct = float(vals[focal_idx])
         counts[score] = counts.get(score, 0) + (pct / 100.0) * n_total
-    mean, sd, se, ci95, n = _mean_sd_se_from_counts(counts)
-    # Fallback: if no Likert series were named "N ..." (e.g. counts chart),
-    # parse the printed (ka=...) so we at least keep the mean.
+    if is_nps:
+        mean, sd, se, ci95, n = _nps_stats_from_counts_0to10(counts)
+    else:
+        mean, sd, se, ci95, n = _mean_sd_se_from_counts(counts)
     if mean is None:
         m = re.search(r"ka=([-\d,\.]+)", cat)
         if m:
             mean = float(m.group(1).replace(",", "."))
             n = n_total
-    return mean, sd, se, ci95, n, cat
+    return mean, sd, se, ci95, n, cat, scale
 
 
 def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 2026) -> Iterable[Row]:
@@ -237,7 +282,7 @@ def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 20
             label = _strip_year_suffix(title)
             if not label:
                 continue
-            mean, sd, se, ci95, n, _ = _pptx_chart_focal_stats(ch)
+            mean, sd, se, ci95, n, _, scale = _pptx_chart_focal_stats(ch)
             if mean is None:
                 continue
             base_id = re.sub(r"[^a-z0-9]+", "_", label.lower())[:60].strip("_")
@@ -258,6 +303,7 @@ def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 20
                 sd=sd,
                 se=se,
                 ci95=ci95,
+                scale=scale,
             )
 
 
@@ -282,6 +328,7 @@ def write_csv(rows: Iterable[Row], dest: Path) -> int:
         "sd",
         "se",
         "ci95",
+        "scale",
     ]
     count = 0
 
@@ -307,6 +354,7 @@ def write_csv(rows: Iterable[Row], dest: Path) -> int:
                     "sd": _fmt(r.sd),
                     "se": _fmt(r.se),
                     "ci95": _fmt(r.ci95),
+                    "scale": r.scale,
                 }
             )
             count += 1

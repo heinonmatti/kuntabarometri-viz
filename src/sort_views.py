@@ -4,9 +4,6 @@ For each sort view defined in ``config.yaml``, compute the metric per
 indicator, rank descending by absolute value (largest gap/change first),
 then copy the matching PNG into ``output/by-sort/<view-id>/`` prefixed
 with the rank (``01_…``, ``02_…``).
-
-We use file copies rather than symlinks because Windows symlinks are
-fiddly and the PNGs are small.
 """
 
 from __future__ import annotations
@@ -17,15 +14,9 @@ from pathlib import Path
 import pandas as pd
 
 from .charts_interactive import compute_metrics
-from .charts_static import _safe_filename
 
 
-def _png_path(out_png: Path, indicator_id: str, source_type: str) -> Path:
-    sub = "timeseries" if source_type == "timeseries" else "cross_section"
-    return out_png / sub / f"{_safe_filename(indicator_id)}.png"
-
-
-def build(csv_path: Path, cfg: dict, out_png: Path, by_sort_dir: Path) -> None:
+def build(csv_path: Path, cfg: dict, png_paths: dict[str, Path], by_sort_dir: Path) -> None:
     df = pd.read_csv(csv_path)
     metrics = compute_metrics(df, cfg)
     by_sort_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +28,6 @@ def build(csv_path: Path, cfg: dict, out_png: Path, by_sort_dir: Path) -> None:
         view_dir.mkdir(parents=True)
 
         metric_col = view["metric"]
-        # Some metrics (e.g. trend_divergence) only apply to timeseries
         scope = metrics.copy()
         if metric_col.startswith("trend_divergence") or metric_col.startswith("hamina_abs_change"):
             scope = scope[scope["source_type"] == "timeseries"]
@@ -53,8 +43,8 @@ def build(csv_path: Path, cfg: dict, out_png: Path, by_sort_dir: Path) -> None:
         width = max(2, len(str(len(ranked))))
         copied = 0
         for i, row in ranked.iterrows():
-            src = _png_path(out_png, row["indicator_id"], row["source_type"])
-            if not src.exists():
+            src = png_paths.get(row["indicator_id"])
+            if not src or not src.exists():
                 continue
             val = row[metric_col]
             val_str = f"{val:+.2f}".replace(".", ",") if isinstance(val, (int, float)) else "—"
@@ -63,7 +53,6 @@ def build(csv_path: Path, cfg: dict, out_png: Path, by_sort_dir: Path) -> None:
             copied += 1
         print(f"  {view['id']}: copied {copied}/{len(ranked)} → {view_dir}")
 
-    # Index page summarising each view
     index_path = by_sort_dir / "README.md"
     lines = ["# Sort views\n",
              f"Generated from `{csv_path.name}` for focal kunta **{cfg['focal_kunta']['label']}**.\n"]

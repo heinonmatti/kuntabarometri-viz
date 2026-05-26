@@ -19,10 +19,60 @@ import plotly.graph_objects as go
 EUROPEAN_FMT = ",.2f"  # Plotly tickformat — uses ',' as decimal in 'de' locale config
 
 
+SCALE_BOUNDS = {
+    "likert_1_5": (1.0, 5.0),
+    "nps": (-100.0, 100.0),
+}
+SCALE_AXIS_LABEL_FI = {
+    "likert_1_5": "Keskiarvo (1–5)",
+    "nps": "NPS-pisteet (-100 – +100)",
+}
+
+
+def _scale_of(df: pd.DataFrame) -> str:
+    if "scale" not in df.columns:
+        return "likert_1_5"
+    s = df["scale"].dropna().astype(str)
+    return s.iloc[0] if not s.empty else "likert_1_5"
+
+
+def _zoom_ylim(values: list[float], cis: list[float], scale: str, min_span: float = 0.8) -> tuple[float, float]:
+    lo_b, hi_b = SCALE_BOUNDS.get(scale, (None, None))
+    means = [v for v in values if v is not None]
+    if not means:
+        return lo_b, hi_b
+    cis = [c or 0 for c in cis]
+    data_lo = min(m - c for m, c in zip(means, cis))
+    data_hi = max(m + c for m, c in zip(means, cis))
+    sd_estimate = (hi_b - lo_b) * 0.20 if lo_b is not None else 1.0
+    target_span = max(min_span, 2.0 * sd_estimate, (data_hi - data_lo) + 0.4)
+    centre = (data_lo + data_hi) / 2
+    lo = centre - target_span / 2
+    hi = centre + target_span / 2
+    if lo_b is not None:
+        if lo < lo_b:
+            hi += (lo_b - lo)
+            lo = lo_b
+        if hi > hi_b:
+            lo -= (hi - hi_b)
+            hi = hi_b
+        lo = max(lo, lo_b)
+        hi = min(hi, hi_b)
+    return lo, hi
+
+
 def _euro(x):
     if pd.isna(x):
         return "—"
     return f"{x:.2f}".replace(".", ",")
+
+
+def _fmt_value(v: float, scale: str) -> str:
+    if pd.isna(v):
+        return "—"
+    if scale == "nps":
+        return f"{int(round(v)):d}"
+    return f"{v:.2f}".replace(".", ",")
 
 
 def _kunta_specs(cfg: dict) -> list[dict]:
@@ -32,7 +82,12 @@ def _kunta_specs(cfg: dict) -> list[dict]:
 def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     fig = go.Figure()
     focal = cfg["focal_kunta"]
+    scale = _scale_of(sub)
 
+    all_means: list[float] = []
+    all_cis: list[float] = []
+    right_labels: list[dict] = []
+    all_years: list[int] = []
     for spec in (cfg["comparators"] + [focal]):
         s = sub[(sub["kunta_slug"] == spec["slug"]) & sub["mean"].notna()].sort_values("year")
         if s.empty:
@@ -40,6 +95,9 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
         is_focal = spec["slug"] == focal["slug"]
         color = spec.get("highlight_color") if is_focal else spec.get("color")
         ci = s["ci95"].fillna(0).tolist()
+        all_means.extend(s["mean"].tolist())
+        all_cis.extend(ci)
+        all_years.extend(s["year"].tolist())
         fig.add_trace(go.Scatter(
             x=s["year"].tolist(),
             y=s["mean"].tolist(),
@@ -55,22 +113,64 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
             hovertemplate="%{x}: <b>%{y:.2f}</b> ±%{customdata:.2f}<extra>" + spec["label"] + "</extra>",
             customdata=ci,
         ))
+        last_year = s["year"].iloc[-1]
+        last_mean = float(s["mean"].iloc[-1])
+        right_labels.append({"x": int(last_year), "y": last_mean, "label": spec["label"], "color": color, "is_focal": is_focal})
+
+    ylo, yhi = _zoom_ylim(all_means, all_cis, scale)
+    tickformat = ".2f" if scale == "likert_1_5" else "d"
+
+    # Right-anchored coloured labels placed in the right MARGIN (xref="paper")
+    # so the axis itself stays flush to the last data year.
+    annotations = []
+    if right_labels:
+        xmax = max(p["x"] for p in right_labels)
+        span = (yhi - ylo) if (yhi is not None and ylo is not None and yhi > ylo) else 1
+        min_gap = span * 0.06
+        ranked = sorted(right_labels, key=lambda p: -p["y"])
+        last_y = ranked[0]["y"]
+        ranked[0]["display_y"] = last_y
+        for i in range(1, len(ranked)):
+            if last_y - ranked[i]["y"] < min_gap:
+                last_y -= min_gap
+            else:
+                last_y = ranked[i]["y"]
+            ranked[i]["display_y"] = last_y
+        for p in ranked:
+            annotations.append(dict(
+                x=1.005, y=p["display_y"], xref="paper", yref="y",
+                text=f"<b>{p['label']}</b>" if p["is_focal"] else p["label"],
+                showarrow=False,
+                xanchor="left", yanchor="middle",
+                font=dict(color=p["color"], size=12.5 if p["is_focal"] else 11.5),
+            ))
+        xmin = min(all_years)
+        xrange = [xmin - 0.2, xmax + 0.2]
+        tickvals = sorted(set(all_years))
+    else:
+        xrange = None
+        tickvals = None
+
     fig.update_layout(
         height=400,
-        margin=dict(l=40, r=20, t=10, b=40),
-        yaxis=dict(range=[1, 5], title="Keskiarvo (1–5)", gridcolor="#E4E7EB", tickformat=".2f"),
-        xaxis=dict(title="Vuosi", dtick=2),
+        margin=dict(l=40, r=140, t=10, b=40),
+        yaxis=dict(range=[ylo, yhi], title=SCALE_AXIS_LABEL_FI.get(scale, "Keskiarvo"), gridcolor="#E4E7EB", tickformat=tickformat, zeroline=(scale == "nps"), zerolinecolor="#3E4C59"),
+        xaxis=dict(title="Vuosi", tickvals=tickvals, range=xrange),
         plot_bgcolor="white",
-        showlegend=True,
-        legend=dict(orientation="h", y=-0.2),
+        showlegend=False,
         separators=", ",
+        annotations=annotations,
     )
     return fig
 
 
 def _make_crosssection_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     focal = cfg["focal_kunta"]
-    ordered_slugs = [focal["slug"]] + [c["slug"] for c in cfg["comparators"]]
+    scale = _scale_of(sub)
+    # Focal first, then regional peers, then aggregates (Koko maa) at the bottom
+    peer_comparators = [c for c in cfg["comparators"] if not c.get("is_aggregate")]
+    aggregate_comparators = [c for c in cfg["comparators"] if c.get("is_aggregate")]
+    ordered_slugs = [focal["slug"]] + [c["slug"] for c in peer_comparators] + [c["slug"] for c in aggregate_comparators]
     sub = (
         sub[sub["mean"].notna()]
         .set_index("kunta_slug")
@@ -91,24 +191,72 @@ def _make_crosssection_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     means = sub["mean"].tolist()
     cis = sub["ci95"].fillna(0).tolist()
 
+    if scale == "nps":
+        axis_lo, axis_hi_raw = SCALE_BOUNDS["nps"]
+        pad = 6.0
+        axis_max = axis_hi_raw + 15
+        tickformat = "d"
+        tickvals = [-100, -75, -50, -25, 0, 25, 50, 75, 100]
+        hover_fmt = "%{y}: <b>%{x:.0f}</b> ±%{customdata:.1f}<extra></extra>"
+    else:
+        axis_lo = 1.0
+        pad = 0.08
+        axis_max = 5.0 + 0.35
+        tickformat = ".2f"
+        tickvals = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]
+        hover_fmt = "%{y}: <b>%{x:.2f}</b> ±%{customdata:.2f}<extra></extra>"
+
+    annotations = []
+    for label, mean, ci in zip(labels, means, cis):
+        x_label = mean + ci + pad
+        if x_label > axis_max - pad * 0.5:
+            annotations.append(dict(
+                x=axis_lo + pad, y=label, xref="x", yref="y",
+                text=f"<b>{_fmt_value(mean, scale)}</b>", showarrow=False, xanchor="left",
+                font=dict(color="white", size=12),
+            ))
+        else:
+            annotations.append(dict(
+                x=x_label, y=label, xref="x", yref="y",
+                text=_fmt_value(mean, scale), showarrow=False, xanchor="left",
+                font=dict(color="#1F2933", size=12),
+            ))
+
     fig = go.Figure(go.Bar(
         x=means,
         y=labels,
         orientation="h",
         marker=dict(color=colors),
         error_x=dict(type="data", array=cis, visible=True, thickness=1.1, width=4, color="#3E4C59"),
-        text=[_euro(v) for v in means],
-        textposition="outside",
-        hovertemplate="%{y}: <b>%{x:.2f}</b> ±%{customdata:.2f}<extra></extra>",
+        hovertemplate=hover_fmt,
         customdata=cis,
+        cliponaxis=False,
     ))
+    xaxis = dict(
+        range=[axis_lo, axis_max],
+        title=SCALE_AXIS_LABEL_FI.get(scale, "Keskiarvo"),
+        gridcolor="#E4E7EB",
+        tickformat=tickformat,
+        tickvals=tickvals,
+    )
+    if scale == "nps":
+        xaxis["zeroline"] = True
+        xaxis["zerolinecolor"] = "#3E4C59"
     fig.update_layout(
         height=80 + 50 * len(labels),
-        margin=dict(l=120, r=40, t=10, b=40),
-        xaxis=dict(range=[1, 5], title="Keskiarvo (1–5)", gridcolor="#E4E7EB", tickformat=".2f"),
-        yaxis=dict(type="category", categoryorder="array", categoryarray=labels[::-1], title=None),
+        margin=dict(l=150, r=60, t=10, b=40),
+        xaxis=xaxis,
+        yaxis=dict(
+            type="category",
+            categoryorder="array",
+            categoryarray=labels[::-1],
+            title=None,
+            ticksuffix="   ",  # breathing room between label and bar
+            automargin=True,
+        ),
         plot_bgcolor="white",
         separators=", ",
+        annotations=annotations,
     )
     return fig
 
@@ -167,21 +315,31 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         source = sub["source_type"].iloc[0]
         label = sub["indicator_label_fi"].iloc[0]
         theme = sub["theme_label_fi"].dropna().iloc[0] if sub["theme_label_fi"].notna().any() else ""
+        # A "time series" with <2 valid years is really a single-year snapshot.
+        valid_years = sub.loc[sub["mean"].notna(), "year"].unique()
+        single_year = source == "timeseries" and len(valid_years) < 2
+        if single_year:
+            source = "cross_section"
+            sub = sub[sub["mean"].notna()].copy()
         if source == "timeseries":
             fig = _make_timeseries_fig(sub, cfg)
         else:
             fig = _make_crosssection_fig(sub, cfg)
         # Plotly figure as JSON for client-side render
-        # to_plotly_json() returns numpy arrays as-is; convert to plain lists so
-        # the Plotly JS reader receives proper arrays (not stringified numpy).
         import plotly.io as pio
         fig_json = pio.to_json(fig, validate=False, remove_uids=True)
         m = metric_lookup.get(ind_id, {})
+        if source == "timeseries":
+            badge_text = "aikasarja"
+        else:
+            yrs = sorted(sub.loc[sub["mean"].notna(), "year"].unique())
+            badge_text = str(int(yrs[-1])) if yrs else "2026"
         cards.append({
             "id": ind_id,
             "label": label,
             "theme": theme,
             "source": source,
+            "badge": badge_text,
             "fig_json": fig_json,
             "metrics": {k: (None if (isinstance(v, float) and pd.isna(v)) else v) for k, v in m.items() if k != "indicator_label_fi"},
         })
@@ -219,9 +377,12 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         .controls input[type="search"] { min-width: 240px; }
         .grid { padding: 24px 32px; display: grid; grid-template-columns: 1fr; gap: 20px; }
         .card { background: var(--card); border-radius: 12px; padding: 18px 20px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-        .card h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+        .card .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+        .card h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }
         .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-        .card .metrics { color: var(--muted); font-size: 11.5px; }
+        .card .metrics { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+        .download-btn { background: white; color: var(--muted); border: 1px solid #CBD2D9; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+        .download-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
         .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #E4E7EB; color: var(--ink); margin-right: 6px; }
         .badge.ts { background: #FFE5EA; color: var(--accent); }
         .badge.cs { background: #E4E7EB; color: var(--ink); }
@@ -282,17 +443,18 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         }
 
         function metricsToBadges(card) {
-          const m = card.metrics || {};
-          const parts = [];
-          if (card.source === "timeseries" && m.hamina_signed_change_first_to_last != null) {
-            const v = m.hamina_signed_change_first_to_last;
-            parts.push(`Muutos ${FOCAL}: ${(v>=0?"+":"")}${v.toFixed(2).replace(".", ",")}`);
-          }
-          if (m.gap_vs_kokomaa_latest != null) {
-            const v = m.gap_vs_kokomaa_latest;
-            parts.push(`Ero koko maahan: ${(v>=0?"+":"")}${v.toFixed(2).replace(".", ",")}`);
-          }
-          return parts.join(" · ");
+          return "";
+        }
+
+        function slugify(s) {
+          return (s||"").toLowerCase()
+            .replace(/[äÄ]/g, "a").replace(/[öÖ]/g, "o").replace(/[åÅ]/g, "a")
+            .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+        }
+
+        function downloadChart(divId, card) {
+          const fname = slugify(card.label) || card.id;
+          Plotly.downloadImage(divId, {format: 'png', filename: fname, width: 1400, height: 700, scale: 2});
         }
 
         function render() {
@@ -311,16 +473,25 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
           filtered.forEach((c, i) => {
             const card = document.createElement("div");
             card.className = "card";
-            const badge = c.source === "timeseries" ? '<span class="badge ts">aikasarja</span>' : '<span class="badge cs">2026</span>';
+            const badgeText = c.badge || (c.source === "timeseries" ? "aikasarja" : "2026");
+            const badge = c.source === "timeseries"
+              ? `<span class="badge ts">${badgeText}</span>`
+              : `<span class="badge cs">${badgeText}</span>`;
             const themeBadge = c.theme && c.theme !== c.label ? `<span class="badge">${c.theme}</span>` : "";
+            const metricLine = metricsToBadges(c);
             card.innerHTML = `
-              <h2>${badge}${themeBadge}${c.label}</h2>
-              <div class="metrics">${metricsToBadges(c)}</div>
+              <div class="card-head">
+                <h2>${badge}${themeBadge}${c.label}</h2>
+                <button class="download-btn" type="button" data-fig="fig-${i}" title="Lataa PNG-kuva">Lataa kuva</button>
+              </div>
+              ${metricLine ? `<div class="metrics">${metricLine}</div>` : ""}
               <div id="fig-${i}" style="height: ${c.source==='timeseries'?'380':'280'}px;"></div>
             `;
             grid.appendChild(card);
             const fig = JSON.parse(c.fig_json);
             Plotly.newPlot(`fig-${i}`, fig.data, fig.layout, {displayModeBar: false, responsive: true});
+            const btn = card.querySelector(".download-btn");
+            if (btn) btn.addEventListener("click", () => downloadChart(btn.dataset.fig, c));
           });
         }
         search.addEventListener("input", render);

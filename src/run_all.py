@@ -61,9 +61,9 @@ def step_charts(cfg: dict, csv_path: Path) -> None:
     except ImportError as e:
         print(f"chart modules not yet implemented: {e}")
         return
-    charts_static.render_all(csv_path, cfg, OUTPUT_DIR / "png")
+    png_paths = charts_static.render_all(csv_path, cfg, OUTPUT_DIR / "png")
     charts_interactive.render(csv_path, cfg, OUTPUT_DIR / "html" / "kuntabarometri.html")
-    sort_views.build(csv_path, cfg, OUTPUT_DIR / "png", OUTPUT_DIR / "by-sort")
+    sort_views.build(csv_path, cfg, png_paths, OUTPUT_DIR / "by-sort")
 
 
 def main():
