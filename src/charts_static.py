@@ -153,6 +153,16 @@ def render_timeseries_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path) 
     series_order = list(kunta_specs.values())
     series_order.sort(key=lambda s: s.get("is_focal", False))
     right_label_points: list[dict] = []
+
+    # x-axis nudge: same logic as charts_interactive — aggregates left, focal next, peers
+    nudge_order = sorted(
+        [focal, *comparators],
+        key=lambda s: (not s.get("is_aggregate"), s["slug"] != focal["slug"]),
+    )
+    spacing = 0.04
+    n_series = len(nudge_order)
+    nudges = {s["slug"]: (i - (n_series - 1) / 2) * spacing for i, s in enumerate(nudge_order)}
+
     for spec in series_order:
         sub = df_valid[df_valid["kunta_slug"] == spec["slug"]]
         if sub.empty:
@@ -160,16 +170,18 @@ def render_timeseries_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path) 
         style = _series_style(spec, spec.get("is_focal", False))
         color = style["color"]
         ci = sub["ci95"].fillna(0).to_numpy()
+        offset = nudges.get(spec["slug"], 0.0)
+        years_nudged = sub["year"] + offset
         ax.errorbar(
-            sub["year"], sub["mean"], yerr=ci,
+            years_nudged, sub["mean"], yerr=ci,
             fmt="none", ecolor=color, elinewidth=1.2, capsize=4, capthick=1.0,
             alpha=0.9 if spec.get("is_focal") else 0.55,
             zorder=style["zorder"] - 1,
         )
-        ax.plot(sub["year"], sub["mean"], **style)
+        ax.plot(years_nudged, sub["mean"], **style)
         last = sub.iloc[-1]
         right_label_points.append({
-            "x": float(last["year"]),
+            "x": float(last["year"]) + offset,
             "y": float(last["mean"]),
             "label": spec["label"],
             "color": color,

@@ -85,12 +85,13 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     scale = _scale_of(sub)
 
     # x-axis nudges so 4 series at the same year don't render on top of each
-    # other. Order is [Koko maa, Hamina, Kotka, Kouvola] reading left -> right.
+    # other. Spacing is just a touch wider than the whisker cap (~4 px), so
+    # markers are distinguishable but the visual year-reading is preserved.
+    # Order left -> right: [Koko maa, Hamina, Kotka, Kouvola].
     all_specs = [focal, *cfg["comparators"]]
     display_order = sorted(all_specs, key=lambda s: (not s.get("is_aggregate"), s["slug"] != focal["slug"]))
-    # display_order will be: aggregates first (Koko maa), then focal, then remaining
     n_series = len(display_order)
-    spacing = 0.12
+    spacing = 0.04
     offsets = {s["slug"]: (i - (n_series - 1) / 2) * spacing for i, s in enumerate(display_order)}
 
     all_means: list[float] = []
