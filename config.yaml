@@ -1,0 +1,88 @@
+dashboard_base_url: "https://survey.taloustutkimus.fi/dashboard/kuntabarometri_2026"
+survey_id: "Kuntabarometri_SYR_2026"
+
+years: [2020, 2022, 2024, 2026]
+
+focal_kunta:
+  slug: hamina
+  label: "Hamina"
+  pptx_source: "kunnat/hamina.pptx"
+  highlight_color: "#C8102E"
+
+comparators:
+  - slug: kokomaa
+    label: "Koko maa"
+    pptx_source: "alueet/kokomaa.pptx"
+    color: "#1F2933"
+    style: solid
+    is_aggregate: true
+  - slug: kotka
+    label: "Kotka"
+    pptx_source: "kunnat/kotka.pptx"
+    color: "#52606D"
+    style: dashed
+  - slug: kouvola
+    label: "Kouvola"
+    pptx_source: "kunnat/kouvola.pptx"
+    color: "#9AA5B1"
+    style: dashed
+
+themes:
+  - askia_rows: "Kokonaisranking"
+    level: 18
+    label_fi: "Kokonaisranking"
+  - askia_rows: "osio1"
+    level: 1
+    label_fi: "Päätöksenteon yrityslähtöisyys"
+  - askia_rows: "osio2"
+    level: 2
+    label_fi: "Hankinnat"
+  - askia_rows: "ypalvelukaikki"
+    level: 15
+    label_fi: "Yrityspalvelut"
+  - askia_rows: "osio4_vanhoilla"
+    level: 16
+    label_fi: "Elinkeinopolitiikan asema"
+  - askia_rows: "osio5"
+    level: 5
+    label_fi: "Infrastruktuuri"
+  - askia_rows: "osio6"
+    level: 6
+    label_fi: "Koulutus ja osaaminen"
+  - askia_rows: "osio7"
+    level: 7
+    label_fi: "Työllisyyspolitiikka"
+  - askia_rows: "osio8"
+    level: 8
+    label_fi: "Arvio kunnan elinkeinopolitiikasta"
+  - askia_rows: "osio9b1_vanhoilla"
+    level: 17
+    label_fi: "Puoleensavetävyys"
+  - askia_rows: "osio10"
+    level: 10
+    label_fi: "Oman toiminnan avoimuus ja markkinoille meno"
+  - askia_rows: "osio11"
+    level: 0
+    label_fi: "Yritysvaikutusten arviointi"
+  - askia_rows: "osio12"
+    level: 11
+    label_fi: "Ulkomaisen työvoiman saanti"
+
+attribution_fi: "Lähde: Suomen Yrittäjät, Kuntabarometri 2026 (Taloustutkimus)."
+
+sort_views:
+  - id: largest-hamina-change
+    label_fi: "Suurin muutos Haminassa (ensimmäisestä viimeiseen mittaukseen)"
+    metric: hamina_abs_change_first_to_last
+  - id: largest-gap-vs-kokomaa
+    label_fi: "Suurin ero Haminan ja koko maan välillä (uusin vuosi)"
+    metric: gap_vs_kokomaa_latest
+  - id: largest-gap-vs-kotka
+    label_fi: "Suurin ero Haminan ja Kotkan välillä (uusin vuosi)"
+    metric: gap_vs_kotka_latest
+  - id: largest-gap-vs-kouvola
+    label_fi: "Suurin ero Haminan ja Kouvolan välillä (uusin vuosi)"
+    metric: gap_vs_kouvola_latest
+  - id: largest-trend-divergence-vs-kokomaa
+    label_fi: "Suurin trendiero Haminan ja koko maan välillä"
+    metric: trend_divergence_vs_kokomaa

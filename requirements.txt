@@ -1,0 +1,6 @@
+python-pptx>=0.6.21
+pandas>=2.0
+matplotlib>=3.7
+plotly>=5.17
+requests>=2.31
+pyyaml>=6.0

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+data/raw/
+output/png/
+output/html/
+output/by-sort/
+data/processed/*.csv
+!data/processed/.gitkeep
