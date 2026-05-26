@@ -1,0 +1,222 @@
+{
+  "Kunnan päätöksenteon yrityslähtöisyys": [
+    {
+      "route": "yrityslahtoisyys1",
+      "text": "Kunnassa otetaan yritykset huomioon jo päätösten valmisteluvaiheessa"
+    },
+    {
+      "route": "yrityslahtoisyys2",
+      "text": "Kunnan päätöksenteko on yritysten kannalta avointa"
+    },
+    {
+      "route": "yrityslahtoisyys3",
+      "text": "Kunnan päätöksenteko on yritysten kannalta tehokasta"
+    },
+    {
+      "route": "yrityslahtoisyys4",
+      "text": "Minkä kokonaisarvosanan annat kunnan päätöksenteon yrityslähtöisyydelle?"
+    }
+  ],
+  "Hankinnat": [
+    {
+      "route": "hankintapalvelut1",
+      "text": "Kunta jakaa hankinnat pk-yritysten näkökulmasta sopiviin osiin"
+    },
+    {
+      "route": "hankintapalvelut2",
+      "text": "Kunta tiedottaa ja kutsuu yrityksiä vuoropuheluun tulevista hankinnoista"
+    },
+    {
+      "route": "hankintapalvelut3",
+      "text": "Pienhankinnat on järjestetty siten, että pk-yritykset huomioidaan"
+    },
+    {
+      "route": "hankintapalvelut4",
+      "text": "Minkä kokonaisarvosanan annat kunnan hankintapolitiikalle?"
+    }
+  ],
+  "Yrityspalvelut": [
+    {
+      "route": "yrityspalvelut1",
+      "text": "Yrityspalvelut tukevat yritykseni toiminnan kehittämistä"
+    },
+    {
+      "route": "yrityspalvelut2",
+      "text": "Yritykseni on saanut riittävästi tietoa yrityspalveluista"
+    },
+    {
+      "route": "yrityspalvelut3",
+      "text": "Yritykseeni on oltu riittävästi yhteydessä"
+    },
+    {
+      "route": "yrityspalvelut4",
+      "text": "Minkä kokonaisarvosanan annat yrityspalveluille?"
+    }
+  ],
+  "Elinkeinopolitiikan asema kunnassa": [
+    {
+      "route": "asema1",
+      "text": "Elinkeinopolitiikka on kunnassani tärkeää"
+    },
+    {
+      "route": "asema3",
+      "text": "Kunta on vetovoimainen asuinpaikka"
+    },
+    {
+      "route": "asema4",
+      "text": "Kunta on vetovoimainen paikka yritykselle"
+    },
+    {
+      "route": "asema5",
+      "text": "Kunnan viranhaltijat arvostavat yrittäjyyttä"
+    },
+    {
+      "route": "asema6",
+      "text": "Kunnan luottamushenkilöt arvostavat yrittäjyyttä"
+    },
+    {
+      "route": "asema7",
+      "text": "Minkä kokonaisarvosanan annat kunnan elinkeinopolitiikan asemalle kunnassa?"
+    }
+  ],
+  "Infrastruktuuri": [
+    {
+      "route": "infrastruktuuri1",
+      "text": "Kunnan kaavoitus huomioi yritykseni tarpeet"
+    },
+    {
+      "route": "infrastruktuuri2",
+      "text": "Yritykseni tilatarpeita edistetään kunnassa"
+    },
+    {
+      "route": "infrastruktuuri3",
+      "text": "Liikenneyhteydet tukevat yritykseni toimintaa ja saavutettavuutta"
+    },
+    {
+      "route": "infrastruktuuri4",
+      "text": "Tietoliikenneyhteydet tukevat yritykseni toimintaa ja saavutettavuutta"
+    },
+    {
+      "route": "infrastruktuuri5",
+      "text": "Lupahakemusten käsittely kunnassa on sujuvaa"
+    },
+    {
+      "route": "infrastruktuuri6",
+      "text": "Minkä kokonaisarvosanan annat kunnan infrastruktuurille?"
+    }
+  ],
+  "Koulutus ja osaaminen": [
+    {
+      "route": "koulutus1",
+      "text": "Yrittäjyyskasvatus on tarvittaessa palvellut yritykseni tarpeita"
+    },
+    {
+      "route": "koulutus2",
+      "text": "Yrittäjälle tarjotaan mahdollisuuksia oman osaamisen kehittämiseen"
+    },
+    {
+      "route": "koulutus3",
+      "text": "Yrityksen henkilöstölle tarjotaan mahdollisuuksia osaamisen kehittämiseen"
+    },
+    {
+      "route": "koulutus4",
+      "text": "Kunta edistää toimillaan osaavan työvoiman saamista yrityksiin"
+    },
+    {
+      "route": "koulutus5",
+      "text": "Minkä kokonaisarvosanan annat koulutukselle ja osaamiselle?"
+    }
+  ],
+  "Työllisyyspolitiikan asema kunnassa": [
+    {
+      "route": "tyollisyyspolitiikka1",
+      "text": "Kunnan tarjoamat työllisyyspalvelut ovat tarvittaessa tukenut yritykseni tarpeita"
+    },
+    {
+      "route": "tyollisyyspolitiikka2",
+      "text": "Kunta tukee yrityksiä ulkomaalaisen työvoiman rekrytoinnissa"
+    },
+    {
+      "route": "tyollisyyspolitiikka3",
+      "text": "Kunnan kotoutumispalvelut tukevat yritysten työvoimatarpeita"
+    },
+    {
+      "route": "tyollisyyspolitiikka4",
+      "text": "Minkä kokonaisarvosanan annat työllisyyspolitiikalle?"
+    }
+  ],
+  "Arvio kunnan elinkeinopolitiikasta": [
+    {
+      "route": "kokonaisarvosana1",
+      "text": "Kunnan päätöksenteon yrityslähtöisyys"
+    },
+    {
+      "route": "kokonaisarvosana2",
+      "text": "Hankinnat"
+    },
+    {
+      "route": "kokonaisarvosana3",
+      "text": "Yrityspalvelut"
+    },
+    {
+      "route": "kokonaisarvosana4",
+      "text": "Elinkeinopolitiikan asema kunnassa"
+    },
+    {
+      "route": "kokonaisarvosana5",
+      "text": "Infrastruktuuri"
+    },
+    {
+      "route": "kokonaisarvosana6",
+      "text": "Koulutus ja osaaminen"
+    },
+    {
+      "route": "kokonaisarvosana7",
+      "text": "Lupa-asioiden sujuvuus"
+    },
+    {
+      "route": "kokonaisarvosana8",
+      "text": "Työllisyyspolitiikka"
+    },
+    {
+      "route": "kokonaisarvosana9",
+      "text": "Minkä kokonaisarvosanan annat kuntasi elinkeinopolitiikalle?"
+    },
+    {
+      "route": "kokonaisarvosana10",
+      "text": "Elinkeinopolitiikan osa-alueet tärkeysjärjestyksessä"
+    },
+    {
+      "route": "kokonaisarvosana11",
+      "text": "Yrityspalvelut tärkeysjärjestyksessä"
+    },
+    {
+      "route": "kokonaisarvosana12",
+      "text": "Elinkeinopolitiikan osa-alueiden onnistuminen"
+    },
+    {
+      "route": "kokonaisarvosana13",
+      "text": "Elinkeinopolitiikan onnistuminen (keskiarvo)"
+    }
+  ],
+  "Kunnan puoleensavetävyys": [
+    {
+      "route": "puoleensavetavyys2",
+      "text": "Miten arvioisit kuntaasi yritysten sijaintipaikkana?"
+    },
+    {
+      "route": "puoleensavetavyys3",
+      "text": "Miten arvioit kuntaasi asuinpaikkana?"
+    },
+    {
+      "route": "puoleensavetavyys4",
+      "text": "Arvioi kuinka hyvin kuntasi on onnistunut uusien yritysten saamisessa kuntaanne?"
+    }
+  ],
+  "Kuntaliitokset": [
+    {
+      "route": "kuntaliitokset1",
+      "text": "Pitäisikö naapurikuntasi liittyä yhteen oman kuntasi kanssa?"
+    }
+  ]
+}

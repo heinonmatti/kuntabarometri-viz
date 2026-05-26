@@ -84,6 +84,15 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     focal = cfg["focal_kunta"]
     scale = _scale_of(sub)
 
+    # x-axis nudges so 4 series at the same year don't render on top of each
+    # other. Order is [Koko maa, Hamina, Kotka, Kouvola] reading left -> right.
+    all_specs = [focal, *cfg["comparators"]]
+    display_order = sorted(all_specs, key=lambda s: (not s.get("is_aggregate"), s["slug"] != focal["slug"]))
+    # display_order will be: aggregates first (Koko maa), then focal, then remaining
+    n_series = len(display_order)
+    spacing = 0.12
+    offsets = {s["slug"]: (i - (n_series - 1) / 2) * spacing for i, s in enumerate(display_order)}
+
     all_means: list[float] = []
     all_cis: list[float] = []
     right_labels: list[dict] = []
@@ -95,11 +104,15 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
         is_focal = spec["slug"] == focal["slug"]
         color = spec.get("highlight_color") if is_focal else spec.get("color")
         ci = s["ci95"].fillna(0).tolist()
+        years_real = s["year"].tolist()
+        years_nudged = [y + offsets.get(spec["slug"], 0.0) for y in years_real]
         all_means.extend(s["mean"].tolist())
         all_cis.extend(ci)
-        all_years.extend(s["year"].tolist())
+        all_years.extend(years_real)
+        # customdata carries [ci, real_year] per point for the hover tooltip
+        customdata = [[ci_v, y_real] for ci_v, y_real in zip(ci, years_real)]
         fig.add_trace(go.Scatter(
-            x=s["year"].tolist(),
+            x=years_nudged,
             y=s["mean"].tolist(),
             error_y=dict(type="data", array=ci, visible=True, thickness=1.1, width=4, color=color),
             mode="lines+markers",
@@ -110,12 +123,13 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
                 dash="solid" if (is_focal or spec.get("style") != "dashed") else "dash",
             ),
             marker=dict(size=10 if is_focal else 6),
-            hovertemplate="%{x}: <b>%{y:.2f}</b> ±%{customdata:.2f}<extra>" + spec["label"] + "</extra>",
-            customdata=ci,
+            hovertemplate="<b>%{customdata[1]}</b>: %{y:.2f} ±%{customdata[0]:.2f}<extra>" + spec["label"] + "</extra>",
+            customdata=customdata,
         ))
-        last_year = s["year"].iloc[-1]
+        last_year_real = int(s["year"].iloc[-1])
+        last_year_nudged = last_year_real + offsets.get(spec["slug"], 0.0)
         last_mean = float(s["mean"].iloc[-1])
-        right_labels.append({"x": int(last_year), "y": last_mean, "label": spec["label"], "color": color, "is_focal": is_focal})
+        right_labels.append({"x": last_year_nudged, "y": last_mean, "label": spec["label"], "color": color, "is_focal": is_focal})
 
     ylo, yhi = _zoom_ylim(all_means, all_cis, scale)
     tickformat = ".2f" if scale == "likert_1_5" else "d"
@@ -309,12 +323,15 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
     metrics = compute_metrics(df, cfg)
     metric_lookup = {m["indicator_id"]: m for m in metrics.to_dict("records")}
 
+    # Theme order: askia themes in config order, then "Muu" group for anything unmapped
+    theme_order = [t["label_fi"] for t in cfg["themes"]]
+
     cards = []
     for ind_id in df["indicator_id"].unique():
         sub = df[df["indicator_id"] == ind_id]
         source = sub["source_type"].iloc[0]
         label = sub["indicator_label_fi"].iloc[0]
-        theme = sub["theme_label_fi"].dropna().iloc[0] if sub["theme_label_fi"].notna().any() else ""
+        theme = sub["theme_label_fi"].dropna().iloc[0] if sub["theme_label_fi"].notna().any() else "Muu"
         # A "time series" with <2 valid years is really a single-year snapshot.
         valid_years = sub.loc[sub["mean"].notna(), "year"].unique()
         single_year = source == "timeseries" and len(valid_years) < 2
@@ -334,18 +351,21 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         else:
             yrs = sorted(sub.loc[sub["mean"].notna(), "year"].unique())
             badge_text = str(int(yrs[-1])) if yrs else "2026"
+        is_theme_aggregate = label == theme  # askia theme rows have indicator label == theme
         cards.append({
             "id": ind_id,
             "label": label,
             "theme": theme,
             "source": source,
             "badge": badge_text,
+            "is_theme_aggregate": is_theme_aggregate,
             "fig_json": fig_json,
             "metrics": {k: (None if (isinstance(v, float) and pd.isna(v)) else v) for k, v in m.items() if k != "indicator_label_fi"},
         })
 
     cards_json = json.dumps(cards, ensure_ascii=False)
     sort_views = json.dumps(cfg["sort_views"], ensure_ascii=False)
+    theme_order_json = json.dumps(theme_order, ensure_ascii=False)
     focal_label = cfg["focal_kunta"]["label"]
     attribution = html.escape(cfg["attribution_fi"])
 
@@ -377,8 +397,15 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         .controls label { font-size: 13px; color: var(--muted); margin-right: 6px; }
         .controls select, .controls input { font-size: 14px; padding: 6px 10px; border: 1px solid #CBD2D9; border-radius: 6px; }
         .controls input[type="search"] { min-width: 240px; }
-        .grid { padding: 24px 32px; display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .grid { padding: 24px 32px; display: flex; flex-direction: column; gap: 8px; }
+        .theme-group { display: flex; flex-direction: column; gap: 14px; padding: 14px 0 24px; border-top: 2px solid #D9DEE6; }
+        .theme-group:first-child { border-top: none; padding-top: 4px; }
+        .theme-header { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 8px 4px 2px; }
+        .theme-header h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+        .theme-header .theme-meta { font-size: 12.5px; color: var(--muted); }
+        .theme-cards { display: grid; grid-template-columns: 1fr; gap: 16px; }
         .card { background: var(--card); border-radius: 12px; padding: 18px 20px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .card.theme-aggregate { border-left: 4px solid var(--accent); }
         .card .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
         .card h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }
         .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -409,8 +436,8 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         </label>
         <label>Järjestys:
           <select id="sortBy">
-            <option value="label">Aakkosellinen</option>
             __SORT_OPTS__
+            <option value="label">Aakkosellinen</option>
           </select>
         </label>
         <label><input type="checkbox" id="hideMissing" checked /> Piilota tyhjät</label>
@@ -420,6 +447,7 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
       <script>
         const CARDS = __CARDS_JSON__;
         const SORT_VIEWS = __SORT_VIEWS__;
+        const THEME_ORDER = __THEME_ORDER__;
         const FOCAL = "__FOCAL__";
         const grid = document.getElementById("grid");
         const search = document.getElementById("search");
@@ -427,26 +455,45 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         const sortBy = document.getElementById("sortBy");
         const hideMissing = document.getElementById("hideMissing");
 
-        function getSortKey(card, mode) {
-          if (mode === "label") return [card.label.toLowerCase()];
+        function metricVal(card, mode) {
+          if (mode === "label") return null;
           const view = SORT_VIEWS.find(v => v.id === mode);
-          if (!view) return [card.label.toLowerCase()];
+          if (!view) return null;
           const v = card.metrics ? card.metrics[view.metric] : null;
-          // Sort descending (largest first), nulls last
-          if (v == null || isNaN(v)) return [Infinity, card.label.toLowerCase()];
-          return [-Math.abs(v), card.label.toLowerCase()];
+          return (v == null || isNaN(v)) ? null : v;
+        }
+
+        function cardSortKey(card, mode) {
+          // Theme aggregate always first within its group
+          const aggKey = card.is_theme_aggregate ? 0 : 1;
+          if (mode === "label") return [aggKey, card.label.toLowerCase()];
+          const v = metricVal(card, mode);
+          if (v == null) return [aggKey, Infinity, card.label.toLowerCase()];
+          return [aggKey, -Math.abs(v), card.label.toLowerCase()];
+        }
+
+        function groupSortKey(theme, cardsInGroup, mode) {
+          if (mode === "label") return [theme.toLowerCase()];
+          // Use theme aggregate's metric if present; else max across group
+          const agg = cardsInGroup.find(c => c.is_theme_aggregate);
+          let m = null;
+          if (agg) m = metricVal(agg, mode);
+          if (m == null) {
+            for (const c of cardsInGroup) {
+              const v = metricVal(c, mode);
+              if (v != null && (m == null || Math.abs(v) > Math.abs(m))) m = v;
+            }
+          }
+          if (m == null) return [Infinity, theme.toLowerCase()];
+          return [-Math.abs(m), theme.toLowerCase()];
         }
 
         function compare(a, b) {
-          for (let i = 0; i < a.length; i++) {
+          for (let i = 0; i < Math.min(a.length, b.length); i++) {
             if (a[i] < b[i]) return -1;
             if (a[i] > b[i]) return 1;
           }
-          return 0;
-        }
-
-        function metricsToBadges(card) {
-          return "";
+          return a.length - b.length;
         }
 
         function slugify(s) {
@@ -460,6 +507,35 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
           Plotly.downloadImage(divId, {format: 'png', filename: fname, width: 1400, height: 700, scale: 2});
         }
 
+        function renderCard(c, idx, container) {
+          const card = document.createElement("div");
+          card.className = "card" + (c.is_theme_aggregate ? " theme-aggregate" : "");
+          const badgeText = c.badge || (c.source === "timeseries" ? "aikasarja" : "2026");
+          const badge = c.source === "timeseries"
+            ? `<span class="badge ts">${badgeText}</span>`
+            : `<span class="badge cs">${badgeText}</span>`;
+          card.innerHTML = `
+            <div class="card-head">
+              <h2>${badge}${c.label}</h2>
+              <button class="download-btn" type="button" data-fig="fig-${idx}" title="Lataa PNG-kuva">Lataa kuva</button>
+            </div>
+            <div id="fig-${idx}" style="height: ${c.source==='timeseries'?'380':'280'}px;"></div>
+          `;
+          container.appendChild(card);
+          const fig = JSON.parse(c.fig_json);
+          fig.layout = Object.assign({}, fig.layout, { dragmode: false });
+          Plotly.newPlot(`fig-${idx}`, fig.data, fig.layout, {
+            displayModeBar: false,
+            responsive: true,
+            scrollZoom: false,
+            doubleClick: false,
+            showAxisDragHandles: false,
+            showAxisRangeEntryBoxes: false,
+          });
+          const btn = card.querySelector(".download-btn");
+          if (btn) btn.addEventListener("click", () => downloadChart(btn.dataset.fig, c));
+        }
+
         function render() {
           const q = search.value.trim().toLowerCase();
           const t = filterType.value;
@@ -471,31 +547,44 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
             if (hm && c.source === "timeseries" && (!c.metrics || c.metrics.hamina_latest == null)) return false;
             return true;
           });
-          filtered.sort((a, b) => compare(getSortKey(a, s), getSortKey(b, s)));
+
+          // Bucket by theme. Themes not in THEME_ORDER fall to "Muu" group, rendered last.
+          const buckets = new Map();
+          for (const c of filtered) {
+            const theme = c.theme || "Muu";
+            if (!buckets.has(theme)) buckets.set(theme, []);
+            buckets.get(theme).push(c);
+          }
+          const themes = Array.from(buckets.keys());
+          themes.sort((a, b) => compare(groupSortKey(a, buckets.get(a), s), groupSortKey(b, buckets.get(b), s)));
+
           grid.innerHTML = "";
-          filtered.forEach((c, i) => {
-            const card = document.createElement("div");
-            card.className = "card";
-            const badgeText = c.badge || (c.source === "timeseries" ? "aikasarja" : "2026");
-            const badge = c.source === "timeseries"
-              ? `<span class="badge ts">${badgeText}</span>`
-              : `<span class="badge cs">${badgeText}</span>`;
-            const themeBadge = c.theme && c.theme !== c.label ? `<span class="badge">${c.theme}</span>` : "";
-            const metricLine = metricsToBadges(c);
-            card.innerHTML = `
-              <div class="card-head">
-                <h2>${badge}${themeBadge}${c.label}</h2>
-                <button class="download-btn" type="button" data-fig="fig-${i}" title="Lataa PNG-kuva">Lataa kuva</button>
-              </div>
-              ${metricLine ? `<div class="metrics">${metricLine}</div>` : ""}
-              <div id="fig-${i}" style="height: ${c.source==='timeseries'?'380':'280'}px;"></div>
-            `;
-            grid.appendChild(card);
-            const fig = JSON.parse(c.fig_json);
-            Plotly.newPlot(`fig-${i}`, fig.data, fig.layout, {displayModeBar: false, responsive: true});
-            const btn = card.querySelector(".download-btn");
-            if (btn) btn.addEventListener("click", () => downloadChart(btn.dataset.fig, c));
-          });
+          let idx = 0;
+          for (const theme of themes) {
+            const cardsInTheme = buckets.get(theme).slice();
+            cardsInTheme.sort((a, b) => compare(cardSortKey(a, s), cardSortKey(b, s)));
+            const group = document.createElement("section");
+            group.className = "theme-group";
+            const view = SORT_VIEWS.find(v => v.id === s);
+            const agg = cardsInTheme.find(c => c.is_theme_aggregate);
+            let metaText = "";
+            if (view) {
+              const m = metricVal(agg, s);
+              if (m != null) metaText = `${view.label_fi}: ${m >= 0 ? "+" : ""}${m.toFixed(2).replace(".", ",")}`;
+            }
+            const header = document.createElement("div");
+            header.className = "theme-header";
+            header.innerHTML = `<h2>${theme}</h2>${metaText ? `<span class="theme-meta">${metaText}</span>` : ""}`;
+            group.appendChild(header);
+            const themeCards = document.createElement("div");
+            themeCards.className = "theme-cards";
+            group.appendChild(themeCards);
+            for (const c of cardsInTheme) {
+              renderCard(c, idx, themeCards);
+              idx += 1;
+            }
+            grid.appendChild(group);
+          }
         }
         search.addEventListener("input", render);
         filterType.addEventListener("change", render);
@@ -517,6 +606,7 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         .replace("__CARDS_JSON__", cards_json)
         .replace("__SORT_VIEWS__", sort_views)
         .replace("__SORT_OPTS__", sort_opts)
+        .replace("__THEME_ORDER__", theme_order_json)
     )
 
     dest.parent.mkdir(parents=True, exist_ok=True)

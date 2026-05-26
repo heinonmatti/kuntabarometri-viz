@@ -33,6 +33,59 @@ EOS_PATTERN = re.compile(r"^en\s*osaa\s*sanoa", re.IGNORECASE)
 TRAILING_YEAR_PATTERN = re.compile(r"\s*\(\d{4}\)\s*$")
 
 
+# Map the dashboard's Kysymykset menu theme names to the askia theme
+# label_fi used in config.yaml, so sub-questions and theme aggregates
+# end up in the same group when rendered.
+DASHBOARD_THEME_TO_ASKIA = {
+    "Kunnan päätöksenteon yrityslähtöisyys": "Päätöksenteon yrityslähtöisyys",
+    "Hankinnat": "Hankinnat",
+    "Yrityspalvelut": "Yrityspalvelut",
+    "Elinkeinopolitiikan asema kunnassa": "Elinkeinopolitiikan asema",
+    "Infrastruktuuri": "Infrastruktuuri",
+    "Koulutus ja osaaminen": "Koulutus ja osaaminen",
+    "Työllisyyspolitiikan asema kunnassa": "Työllisyyspolitiikka",
+    "Arvio kunnan elinkeinopolitiikasta": "Arvio kunnan elinkeinopolitiikasta",
+    "Kunnan puoleensavetävyys": "Puoleensavetävyys",
+    "Kuntaliitokset": None,
+}
+
+
+# Sub-questions that don't appear in the dashboard's Kysymykset menu but
+# belong to one of the configured askia themes. Added by inspection.
+EXTRA_THEME_MEMBERSHIP = {
+    # "Oman toiminnan avoimuus ja markkinoille meno" cluster (transparency / market access)
+    "Kunta viestii yrityksiä koskevista tavoitteista, suunnitelmista, toimista ja päätöksistä": "Oman toiminnan avoimuus ja markkinoille meno",
+    "Kunnan omat yhtiöt kilpailevat yritystoiminnan kanssa": "Oman toiminnan avoimuus ja markkinoille meno",
+    "Kunnan omistajapolitiikkaan kiinnitetään huomiota": "Oman toiminnan avoimuus ja markkinoille meno",
+    "Kuntayhtiöitä on omistajaohjattu olemaan harjoittamatta yritysten kanssa markkinoilla kilpailevaa elinkeinotoimintaa": "Oman toiminnan avoimuus ja markkinoille meno",
+    "Kunnan ostolaskudata julkaistaan avoimesti": "Oman toiminnan avoimuus ja markkinoille meno",
+    # "Yritysvaikutusten arviointi"
+    "Arvioi miten hyvin kuntasi ottaa huomioon vaikutukset yritysten toimintaedellytyksiin päätöksenteossaan": "Yritysvaikutusten arviointi",
+    # "Ulkomaisen työvoiman saanti"
+    "Minkä kokonaisarvosanan annat kuntasi työlle ulkomaisen työvoiman saamiseksi?": "Ulkomaisen työvoiman saanti",
+    "Minkä kokonaisarvosanan annat kuntasi työlle ulkomaisen työvoiman kotoutumiseksi?": "Ulkomaisen työvoiman saanti",
+    # NPS — fits "Puoleensavetävyys" (recommend the kunta as a business location)
+    "Kuinka todennäköisesti suosittelisit kuntaa / kaupunkia toiselle yritykselle sijaintikunnaksi?": "Puoleensavetävyys",
+}
+
+
+def _load_theme_membership(processed_dir: Path) -> dict[str, str]:
+    """Return {sub_question_text: askia_theme_label} mapping."""
+    out: dict[str, str] = {}
+    path = processed_dir / "theme_membership.json"
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        for dashboard_theme, questions in raw.items():
+            askia_theme = DASHBOARD_THEME_TO_ASKIA.get(dashboard_theme)
+            if not askia_theme:
+                continue
+            for q in questions:
+                out[q["text"].strip()] = askia_theme
+    # Manual overrides for questions not in the Kysymykset menu
+    out.update(EXTRA_THEME_MEMBERSHIP)
+    return out
+
+
 @dataclass(frozen=True)
 class Row:
     source_type: str
@@ -293,9 +346,16 @@ def _pptx_chart_focal_stats(chart) -> tuple[float | None, float | None, float | 
     return mean, sd, se, ci95, n, cat, scale
 
 
-def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 2026) -> Iterable[Row]:
+def pptx_rows(
+    pptx_path: Path,
+    kunta_slug: str,
+    kunta_label: str,
+    year: int = 2026,
+    theme_membership: dict[str, str] | None = None,
+) -> Iterable[Row]:
     prs = Presentation(pptx_path)
     seen_titles: dict[str, int] = {}
+    theme_membership = theme_membership or {}
     for slide_idx, slide in enumerate(prs.slides):
         for shape in slide.shapes:
             if not (hasattr(shape, "has_chart") and shape.has_chart):
@@ -324,7 +384,7 @@ def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 20
                 kind="sub_question",
                 indicator_id=f"subq_{slide_idx:02d}_{indicator_id}",
                 indicator_label_fi=label,
-                theme_label_fi=None,
+                theme_label_fi=theme_membership.get(label),
                 year=year,
                 kunta_slug=kunta_slug,
                 kunta_label_fi=kunta_label,
@@ -419,13 +479,14 @@ def build_all(cfg: dict, raw_dir: Path, processed_dir: Path) -> Path:
             rows.extend(askia_rows(jp, theme, year, focal, comparators, respondent_counts))
 
     # 2) PPTX cross-section, skipping theme-summary slides that duplicate askia
+    theme_membership = _load_theme_membership(processed_dir)
     pptx_dir = raw_dir / "pptx"
     kuntas = [focal] + comparators
     for k in kuntas:
         path = pptx_dir / f"{k['slug']}.pptx"
         if not path.exists():
             continue
-        for r in pptx_rows(path, k["slug"], k["label"]):
+        for r in pptx_rows(path, k["slug"], k["label"], theme_membership=theme_membership):
             if r.indicator_label_fi in theme_labels:
                 continue
             rows.append(r)
