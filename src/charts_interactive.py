@@ -168,9 +168,9 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
 
     fig.update_layout(
         height=400,
-        margin=dict(l=40, r=140, t=10, b=40),
-        yaxis=dict(range=[ylo, yhi], title=SCALE_AXIS_LABEL_FI.get(scale, "Keskiarvo"), gridcolor="#E4E7EB", tickformat=tickformat, zeroline=(scale == "nps"), zerolinecolor="#3E4C59"),
-        xaxis=dict(title="Vuosi", tickvals=tickvals, range=xrange),
+        margin=dict(l=60, r=140, t=10, b=30),
+        yaxis=dict(range=[ylo, yhi], title=SCALE_AXIS_LABEL_FI.get(scale, "Keskiarvo"), gridcolor="#E4E7EB", tickformat=tickformat, zeroline=(scale == "nps"), zerolinecolor="#3E4C59", automargin=True),
+        xaxis=dict(title=None, tickvals=tickvals, range=xrange, automargin=True),
         plot_bgcolor="white",
         showlegend=False,
         separators=", ",
@@ -381,18 +381,25 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         :root {
           --ink: #1F2933;
           --muted: #52606D;
-          --accent: #C8102E;
-          --bg: #F5F7FA;
+          --accent: #9C2B21;
+          --left-stripe: #9C2B21;
+          --bg: #FAF5EC;
+          --banner: #A6D9EC;
           --card: #FFFFFF;
         }
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
-        header { padding: 24px 32px 12px; border-bottom: 1px solid #CBD2D9; background: white; }
+        .top-banner { background: var(--banner); padding: 0; display: flex; justify-content: flex-start; align-items: center; }
+        .top-banner img { display: block; max-width: 100%; max-height: 110px; height: auto; }
+        header { padding: 24px 32px 12px; border-bottom: 1px solid #CBD2D9; background: var(--bg); }
+        header h1 { margin: 0 0 4px; font-size: 22px; }
+        header a { color: var(--accent); text-decoration: none; }
+        header a:hover { text-decoration: underline; }
         header h1 { margin: 0; font-size: 22px; }
         header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 70em; }
-        header p.ci-note { margin-top: 10px; padding: 10px 14px; background: #FFF7E6; border-left: 4px solid #D55E00; color: #1F2933; font-size: 13.5px; line-height: 1.45; }
+        header p.ci-note { margin-top: 10px; padding: 10px 14px; background: #F1E8D7; border-left: 4px solid var(--left-stripe); border-radius: 6px; color: #1F2933; font-size: 13.5px; line-height: 1.45; }
         header p.ci-note strong { color: #1F2933; }
-        header p.method-note { margin-top: 8px; padding: 10px 14px; background: #EAF4FB; border-left: 4px solid #0072B2; color: #1F2933; font-size: 13px; line-height: 1.45; }
+        header p.method-note { margin-top: 8px; padding: 10px 14px; background: #F1E8D7; border-left: 4px solid var(--left-stripe); border-radius: 6px; color: #1F2933; font-size: 13px; line-height: 1.45; }
         header p.method-note strong { color: #1F2933; }
         .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 14px 32px; background: white; border-bottom: 1px solid #CBD2D9; position: sticky; top: 0; z-index: 10; }
         .controls label { font-size: 13px; color: var(--muted); margin-right: 6px; }
@@ -405,8 +412,8 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         .theme-header h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
         .theme-header .theme-meta { font-size: 12.5px; color: var(--muted); }
         .theme-cards { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        .card { background: var(--card); border-radius: 12px; padding: 18px 20px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-        .card.theme-aggregate { border-left: 4px solid var(--accent); }
+        .card { background: var(--card); border-radius: 12px; padding: 18px 20px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid var(--left-stripe); overflow: hidden; }
+        .card.theme-aggregate { border-left: 4px solid var(--left-stripe); }
         .card .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
         .card h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }
         .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -417,14 +424,19 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         .badge.ts { background: #FFE5EA; color: var(--accent); }
         .badge.cs { background: #E4E7EB; color: var(--ink); }
         footer { padding: 16px 32px; color: var(--muted); font-size: 12px; }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
       </style>
     </head>
     <body>
+      <div class="top-banner">
+        <img src="banner.jpg" alt="Ajatuksia ja kuntakuvia" />
+      </div>
       <header>
-        <h1>Kuntabarometri – __FOCAL__ vs vertailukunnat</h1>
-        <p>Aikasarja 2022–2026 teemoittain (13) ja poikkileikkaus 2026 alakysymyksittäin. __ATTRIB__</p>
+        <h1>Kuntabarometri – Kymenlaakso</h1>
+        <p>Aikasarja 2022–2026 teemoittain (13) ja poikkileikkaus 2026 alakysymyksittäin · Lähde: Suomen Yrittäjät, Kuntabarometri 2026 (Taloustutkimus) · Toteuttaja: Matti T.&nbsp;J.&nbsp;Heino – <a href="https://mattiheino.com" target="_blank" rel="noopener noreferrer">mattiheino.com</a> | <a href="https://preparedness.fi" target="_blank" rel="noopener noreferrer">preparedness.fi</a></p>
         <p class="ci-note"><strong>Lue virhepalkit näin:</strong> Pylväät ja viivat näyttävät vastausten keskiarvon (asteikko 1–5). Niitä ympäröivät virhepalkit ovat <em>95 %:n luottamusvälejä</em>. Jos kahden kunnan virhepalkit <strong>eivät leikkaa toisiaan</strong>, ero on tilastollisesti merkitsevä (p&nbsp;&lt;&nbsp;0,05) – sääntö pätee aina yhteen suuntaan. Päinvastoin se ei pidä paikkaansa: luottamusvälien limittyminen ei suoraan tarkoita, ettei ero ole merkitsevä, varsinkin jos limitys on hyvin pieni. Pienissä kunnissa (esim. Hamina ~90 vastaajaa) virhepalkit ovat luonnostaan suuremmat kuin koko maan koonnissa (~12 000 vastaajaa).</p>
-        <p class="method-note"><strong>Huom. aikasarjojen keskiarvojen laskenta:</strong> Arvot lasketaan tällä sivustolla vastaustasolla: kaikki teeman alakysymyksien vastaukset yhdistetään ja niistä lasketaan keskiarvo. Tämä on ainoa tapa saada vertailukelpoinen aikasarja vuosille 2022–2026, sillä Taloustutkimus julkaisee <a href="https://survey.taloustutkimus.fi/dashboard/kuntabarometri_2026/" target="_blank" rel="noopener noreferrer">lähdesivustolla</a> tarkemman, vastaajatasolla lasketun teemaindeksin (vastaajan oma keskiarvo teemansa kysymyksistä) vain uusimmasta vuodesta. Siksi täsmälliset keskiarvolukemaat saattavat poiketa kuntaraporteista, mutta trendit ja eri alueiden väliset erot pätevät suhteessa toisiinsa.</p>
+        <p class="method-note"><strong>Huom. aikasarjojen keskiarvojen laskenta:</strong> Arvot lasketaan tällä sivustolla vastaustasolla: kaikki teeman alakysymyksien vastaukset yhdistetään ja niistä lasketaan keskiarvo. Tämä on ainoa tapa saada vertailukelpoinen aikasarja vuosille 2022–2026, sillä Taloustutkimus julkaisee <a href="https://survey.taloustutkimus.fi/dashboard/kuntabarometri_2026/" target="_blank" rel="noopener noreferrer">lähdesivustolla</a> tarkemman, vastaajatasolla lasketun teemaindeksin (vastaajan oma keskiarvo teemansa kysymyksistä) vain uusimmasta vuodesta. Siksi täsmälliset keskiarvolukemat saattavat poiketa kuntaraporteista, mutta trendit ja eri alueiden väliset erot pätevät suhteessa toisiinsa.</p>
       </header>
       <div class="controls">
         <label>Hae: <input type="search" id="search" placeholder="kysymyksen tai teeman osa..."/></label>
@@ -444,7 +456,7 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         <label><input type="checkbox" id="hideMissing" checked /> Piilota tyhjät</label>
       </div>
       <div class="grid" id="grid"></div>
-      <footer>__ATTRIB__</footer>
+      <footer>__ATTRIB__ · Toteuttaja: Matti T.&nbsp;J.&nbsp;Heino – <a href="https://mattiheino.com" target="_blank" rel="noopener noreferrer">mattiheino.com</a> | <a href="https://preparedness.fi" target="_blank" rel="noopener noreferrer">preparedness.fi</a></footer>
       <script>
         const CARDS = __CARDS_JSON__;
         const SORT_VIEWS = __SORT_VIEWS__;
@@ -566,16 +578,9 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
             cardsInTheme.sort((a, b) => compare(cardSortKey(a, s), cardSortKey(b, s)));
             const group = document.createElement("section");
             group.className = "theme-group";
-            const view = SORT_VIEWS.find(v => v.id === s);
-            const agg = cardsInTheme.find(c => c.is_theme_aggregate);
-            let metaText = "";
-            if (view) {
-              const m = metricVal(agg, s);
-              if (m != null) metaText = `${view.label_fi}: ${m >= 0 ? "+" : ""}${m.toFixed(2).replace(".", ",")}`;
-            }
             const header = document.createElement("div");
             header.className = "theme-header";
-            header.innerHTML = `<h2>${theme}</h2>${metaText ? `<span class="theme-meta">${metaText}</span>` : ""}`;
+            header.innerHTML = `<h2>${theme}</h2>`;
             group.appendChild(header);
             const themeCards = document.createElement("div");
             themeCards.className = "theme-cards";

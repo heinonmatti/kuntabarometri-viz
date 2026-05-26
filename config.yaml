@@ -71,7 +71,7 @@ themes:
     level: 11
     label_fi: "Ulkomaisen työvoiman saanti"
 
-attribution_fi: "Lähde: Suomen Yrittäjät, Kuntabarometri 2026 (Taloustutkimus)."
+attribution_fi: "Lähde: Suomen Yrittäjät, Kuntabarometri 2026 (Taloustutkimus)"
 
 sort_views:
   - id: largest-gap-vs-kokomaa
