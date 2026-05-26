@@ -42,9 +42,18 @@ def step_fetch(cfg: dict, *, force: bool) -> None:
     )
     print(f"pptx: {len(paths)} files in data/raw/pptx/")
 
-    # AskiaVista
+    # AskiaVista theme charts (mean is computed from this)
     askia_client.fetch_all(
         cfg["themes"],
+        cfg["years"],
+        RAW_DIR,
+        force=force,
+    )
+
+    # AskiaVista respondent counts per (kunta x year) — used as the n in SE
+    askia_client.fetch_respondent_counts(
+        cfg["focal_kunta"],
+        cfg["comparators"],
         cfg["years"],
         RAW_DIR,
         force=force,

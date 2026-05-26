@@ -80,6 +80,75 @@ def cache_path(raw_dir: Path, theme_rows: str, year: int) -> Path:
     return raw_dir / "askia" / f"{theme_rows}_{year}.json"
 
 
+def fetch_respondent_counts(
+    focal: dict,
+    comparators: list[dict],
+    years: list[int],
+    raw_dir: Path,
+    *,
+    force: bool = False,
+) -> dict:
+    """Return {year: {kunta_slug: respondent_n}} for each (year, kunta) pair.
+
+    Queries the 'Sukupuoli' (gender) baseline question cross-tabbed with
+    RANKING_KUNNAT and ROUND_YYYY. Summing answer counts across gender
+    options for a given kunta row gives the true respondent count
+    (everyone answers gender, with negligible attrition).
+    """
+    cache_file = raw_dir / "askia" / "_respondent_counts.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    if cache_file.exists() and not force:
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+
+    script = """
+    ([rows, edges, columns]) => new Promise((resolve) => {
+      try {
+        askiaVista.getPages({
+          id: "rn_probe", containerId: "rn_probe",
+          rows: [rows],
+          profileColumns: columns,
+          profileEdges: edges,
+          level: 0,
+          chart: { name: "Highcharts", options: { chartType: "line" } },
+          calculations: [{ type: "PercentageX" }, { type: "CountsX" }, { type: "MeanX" }, { type: "NX" }],
+          success: function (strData) { resolve({ ok: true, data: strData }); },
+          error: function (err) { resolve({ ok: false, err: JSON.stringify(err).slice(0, 400) }); }
+        });
+        setTimeout(() => resolve({ ok: false, err: "timeout" }), 30000);
+      } catch (e) { resolve({ ok: false, err: e.message }); }
+    })
+    """
+    out: dict[str, dict[str, int]] = {}
+    with askia_session() as page:
+        for year in years:
+            res = page.evaluate(script, ["Sukupuoli", f"ROUND_{year}", "RANKING_KUNNAT"])
+            if not res.get("ok"):
+                print(f"  respondent-count fetch failed for {year}: {res.get('err')}")
+                continue
+            data = json.loads(res["data"])
+            chart_item = next((c for c in data if c.get("type") == "chart"), None)
+            if not chart_item or not chart_item.get("output"):
+                continue
+            chart = chart_item["output"][0]
+            cats = [c.get("name") for c in chart.get("categories", [])]
+            per_cat: dict[str, float] = {}
+            for s in chart.get("series", []):
+                for i, n in enumerate(s.get("data", [])):
+                    per_cat[cats[i]] = per_cat.get(cats[i], 0) + n
+            year_counts: dict[str, int] = {}
+            for k in [focal, *comparators]:
+                if k.get("is_aggregate"):
+                    n = sum(per_cat[c] for c in cats if c and not c.startswith("Keskiarvo"))
+                else:
+                    row = next((c for c in cats if c and (c == k["label"] or c.startswith(k["label"] + " "))), None)
+                    n = per_cat.get(row, 0) if row else 0
+                year_counts[k["slug"]] = int(round(n))
+            out[str(year)] = year_counts
+            print(f"  respondent counts {year}: " + ", ".join(f"{s}={n}" for s, n in year_counts.items()))
+    cache_file.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out
+
+
 def fetch_all(themes: list[dict], years: list[int], raw_dir: Path, *, force: bool = False, sleep_between: float = 0.3) -> list[Path]:
     """Fetch every (theme, year) pair, cache to disk, return list of file paths."""
     out_dir = raw_dir / "askia"

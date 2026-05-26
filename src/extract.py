@@ -133,7 +133,23 @@ def _find_kunta_stats(category_stats: list[tuple[str, dict[int, float]]], kunta_
     return None, None, None, None, 0
 
 
-def askia_rows(json_path: Path, theme: dict, year: int, focal: dict, comparators: list[dict]) -> Iterable[Row]:
+def askia_rows(
+    json_path: Path,
+    theme: dict,
+    year: int,
+    focal: dict,
+    comparators: list[dict],
+    respondent_counts: dict | None = None,
+) -> Iterable[Row]:
+    """Build theme-level time-series rows.
+
+    The *mean* uses answer-level pooling (sum over the per-Likert answer
+    counts in the askia chart). The *SE / CI95* however use the true
+    **respondent count** for that (kunta, year), passed in via
+    ``respondent_counts``. Without that correction CIs would be ~1.5–6×
+    too narrow because every respondent contributes multiple correlated
+    answers per theme.
+    """
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     chart_item = next((c for c in payload if isinstance(c, dict) and c.get("type") == "chart"), None)
     if chart_item is None or not chart_item.get("output"):
@@ -141,8 +157,22 @@ def askia_rows(json_path: Path, theme: dict, year: int, focal: dict, comparators
     chart = chart_item["output"][0]
     cat_stats = _category_stats(chart)
 
+    def _resp_n(slug: str) -> int | None:
+        if not respondent_counts:
+            return None
+        per_year = respondent_counts.get(str(year), {})
+        n = per_year.get(slug)
+        return int(n) if n else None
+
     def _row(kunta_slug: str, kunta_label: str, stats: tuple) -> Row:
-        mean, sd, se, ci95, n = stats
+        mean, sd, se, ci95, n_answers = stats
+        resp_n = _resp_n(kunta_slug)
+        if resp_n and resp_n > 0 and sd is not None:
+            se = sd / (resp_n ** 0.5)
+            ci95 = 1.96 * se
+            n_eff = resp_n
+        else:
+            n_eff = n_answers
         return Row(
             source_type="timeseries",
             kind="theme",
@@ -153,7 +183,7 @@ def askia_rows(json_path: Path, theme: dict, year: int, focal: dict, comparators
             kunta_slug=kunta_slug,
             kunta_label_fi=kunta_label,
             mean=mean,
-            n=n,
+            n=n_eff,
             sd=sd,
             se=se,
             ci95=ci95,
@@ -367,25 +397,38 @@ def build_all(cfg: dict, raw_dir: Path, processed_dir: Path) -> Path:
     themes = cfg["themes"]
     years = cfg["years"]
 
+    # Respondent counts (n per kunta per year) — used as the SE denominator
+    # on askia themes to avoid the answer-clustering bias.
+    resp_path = raw_dir / "askia" / "_respondent_counts.json"
+    respondent_counts = json.loads(resp_path.read_text(encoding="utf-8")) if resp_path.exists() else None
+
+    # Theme labels covered by askia time-series — used to suppress PPTX
+    # summary slides for the same theme (otherwise the dashboard shows
+    # two cards with the same title and slightly different numbers).
+    theme_labels = {t["label_fi"] for t in themes}
+
     rows: list[Row] = []
 
-    # 1) askia theme-level time series
+    # 1) askia theme-level time series (mean + respondent-n SE)
     askia_dir = raw_dir / "askia"
     for theme in themes:
         for year in years:
             jp = askia_dir / f"{theme['askia_rows']}_{year}.json"
             if not jp.exists():
                 continue
-            rows.extend(askia_rows(jp, theme, year, focal, comparators))
+            rows.extend(askia_rows(jp, theme, year, focal, comparators, respondent_counts))
 
-    # 2) PPTX cross-section for each kunta
+    # 2) PPTX cross-section, skipping theme-summary slides that duplicate askia
     pptx_dir = raw_dir / "pptx"
     kuntas = [focal] + comparators
     for k in kuntas:
         path = pptx_dir / f"{k['slug']}.pptx"
         if not path.exists():
             continue
-        rows.extend(pptx_rows(path, k["slug"], k["label"]))
+        for r in pptx_rows(path, k["slug"], k["label"]):
+            if r.indicator_label_fi in theme_labels:
+                continue
+            rows.append(r)
 
     dest = processed_dir / "kuntabarometri.csv"
     n = write_csv(rows, dest)
