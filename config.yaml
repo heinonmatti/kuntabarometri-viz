@@ -74,18 +74,18 @@ themes:
 attribution_fi: "Lähde: Suomen Yrittäjät, Kuntabarometri 2026 (Taloustutkimus)."
 
 sort_views:
-  - id: largest-hamina-change
-    label_fi: "Suurin muutos Haminassa (ensimmäisestä viimeiseen mittaukseen)"
-    metric: hamina_abs_change_first_to_last
   - id: largest-gap-vs-kokomaa
     label_fi: "Suurin ero Haminan ja koko maan välillä (uusin vuosi)"
     metric: gap_vs_kokomaa_latest
+  - id: largest-hamina-change
+    label_fi: "Suurin muutos Haminassa (ensimmäisestä viimeiseen mittaukseen)"
+    metric: hamina_abs_change_first_to_last
+  - id: largest-trend-divergence-vs-kokomaa
+    label_fi: "Suurin trendiero Haminan ja koko maan välillä"
+    metric: trend_divergence_vs_kokomaa
   - id: largest-gap-vs-kotka
     label_fi: "Suurin ero Haminan ja Kotkan välillä (uusin vuosi)"
     metric: gap_vs_kotka_latest
   - id: largest-gap-vs-kouvola
     label_fi: "Suurin ero Haminan ja Kouvolan välillä (uusin vuosi)"
     metric: gap_vs_kouvola_latest
-  - id: largest-trend-divergence-vs-kokomaa
-    label_fi: "Suurin trendiero Haminan ja koko maan välillä"
-    metric: trend_divergence_vs_kokomaa

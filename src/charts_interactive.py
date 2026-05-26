@@ -579,11 +579,13 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
             const themeCards = document.createElement("div");
             themeCards.className = "theme-cards";
             group.appendChild(themeCards);
+            // Attach to DOM before Plotly.newPlot — Plotly needs the target div
+            // to be in the document tree, not in a detached fragment.
+            grid.appendChild(group);
             for (const c of cardsInTheme) {
               renderCard(c, idx, themeCards);
               idx += 1;
             }
-            grid.appendChild(group);
           }
         }
         search.addEventListener("input", render);
