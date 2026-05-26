@@ -103,10 +103,18 @@ def render_timeseries_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path) 
         if sub.empty:
             continue
         style = _series_style(spec, spec.get("is_focal", False))
+        color = style["color"]
+        # Error bars: 95% CI as vertical whiskers
+        ci = sub["ci95"].fillna(0).to_numpy()
+        ax.errorbar(
+            sub["year"], sub["mean"], yerr=ci,
+            fmt="none", ecolor=color, elinewidth=1.2, capsize=4, capthick=1.0,
+            alpha=0.9 if spec.get("is_focal") else 0.55,
+            zorder=style["zorder"] - 1,
+        )
         line, = ax.plot(sub["year"], sub["mean"], label=spec["label"], **style)
         handles.append(line)
         labels.append(spec["label"])
-        # Annotate focal's last point
         if spec.get("is_focal"):
             last = sub.iloc[-1]
             ax.annotate(
@@ -114,7 +122,7 @@ def render_timeseries_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path) 
                 (last["year"], last["mean"]),
                 textcoords="offset points",
                 xytext=(10, 4),
-                color=style["color"],
+                color=color,
                 fontweight="bold",
                 fontsize=10.5,
             )
@@ -127,7 +135,7 @@ def render_timeseries_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path) 
     for text in leg.get_texts():
         if text.get_text() == focal["label"]:
             text.set_fontweight("bold")
-            text.set_color(focal.get("highlight_color", "#C8102E"))
+            text.set_color(focal.get("highlight_color"))
 
     _style_axes(ax, cfg["attribution_fi"])
     fig.tight_layout(rect=[0, 0.03, 1, 1])
@@ -170,16 +178,19 @@ def render_crosssection_indicator(df_ind: pd.DataFrame, cfg: dict, out_dir: Path
         spec = kunta_specs_map.get(slug, {})
         colors.append(spec.get("highlight_color") if spec.get("is_focal") else spec.get("color", "#52606D"))
 
+    cis = df_valid["ci95"].fillna(0).to_numpy()
     bars = ax.barh(
         df_valid["kunta_label_fi"],
         df_valid["mean"],
         color=colors,
         edgecolor="white",
         linewidth=0.6,
+        xerr=cis,
+        error_kw=dict(ecolor="#3E4C59", elinewidth=1.0, capsize=3, capthick=0.9, alpha=0.9),
     )
-    # Annotate bar ends
-    for bar, val in zip(bars, df_valid["mean"]):
-        ax.text(val + 0.05, bar.get_y() + bar.get_height() / 2, _european_format(val),
+    # Annotate bar ends, accounting for error bar extent
+    for bar, val, ci in zip(bars, df_valid["mean"], cis):
+        ax.text(val + ci + 0.07, bar.get_y() + bar.get_height() / 2, _european_format(val),
                 va="center", fontsize=10.5, color="#1F2933")
 
     ax.set_xlim(1, 5)

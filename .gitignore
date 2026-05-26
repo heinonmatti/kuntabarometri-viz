@@ -10,3 +10,10 @@ output/html/
 output/by-sort/
 data/processed/*.csv
 !data/processed/.gitkeep
+
+# Cloudflare Pages deploy bundle is regenerated from output/
+site/
+
+# Wrangler internal files
+.wrangler/
+node_modules/

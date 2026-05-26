@@ -32,35 +32,38 @@ def _kunta_specs(cfg: dict) -> list[dict]:
 def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     fig = go.Figure()
     focal = cfg["focal_kunta"]
-    specs = {focal["slug"]: {**focal, "is_focal": True}}
-    for c in cfg["comparators"]:
-        specs[c["slug"]] = {**c, "is_focal": False}
 
     for spec in (cfg["comparators"] + [focal]):
         s = sub[(sub["kunta_slug"] == spec["slug"]) & sub["mean"].notna()].sort_values("year")
         if s.empty:
             continue
         is_focal = spec["slug"] == focal["slug"]
+        color = spec.get("highlight_color") if is_focal else spec.get("color")
+        ci = s["ci95"].fillna(0).tolist()
         fig.add_trace(go.Scatter(
-            x=s["year"], y=s["mean"], mode="lines+markers",
+            x=s["year"].tolist(),
+            y=s["mean"].tolist(),
+            error_y=dict(type="data", array=ci, visible=True, thickness=1.1, width=4, color=color),
+            mode="lines+markers",
             name=spec["label"],
             line=dict(
-                color=spec.get("highlight_color") if is_focal else spec.get("color"),
+                color=color,
                 width=3.5 if is_focal else 1.8,
                 dash="solid" if (is_focal or spec.get("style") != "dashed") else "dash",
             ),
             marker=dict(size=10 if is_focal else 6),
-            hovertemplate="%{x}: <b>%{y:.2f}</b><extra>" + spec["label"] + "</extra>",
+            hovertemplate="%{x}: <b>%{y:.2f}</b> ±%{customdata:.2f}<extra>" + spec["label"] + "</extra>",
+            customdata=ci,
         ))
     fig.update_layout(
-        height=380,
+        height=400,
         margin=dict(l=40, r=20, t=10, b=40),
         yaxis=dict(range=[1, 5], title="Keskiarvo (1–5)", gridcolor="#E4E7EB", tickformat=".2f"),
         xaxis=dict(title="Vuosi", dtick=2),
         plot_bgcolor="white",
         showlegend=True,
         legend=dict(orientation="h", y=-0.2),
-        separators=", ",  # European: comma decimal, space thousands
+        separators=", ",
     )
     return fig
 
@@ -68,7 +71,13 @@ def _make_timeseries_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
 def _make_crosssection_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
     focal = cfg["focal_kunta"]
     ordered_slugs = [focal["slug"]] + [c["slug"] for c in cfg["comparators"]]
-    sub = sub[sub["mean"].notna()].set_index("kunta_slug").reindex(ordered_slugs).dropna(subset=["mean"]).reset_index()
+    sub = (
+        sub[sub["mean"].notna()]
+        .set_index("kunta_slug")
+        .reindex([s for s in ordered_slugs if s in sub["kunta_slug"].values])
+        .dropna(subset=["mean"])
+        .reset_index()
+    )
 
     colors = []
     for slug in sub["kunta_slug"]:
@@ -78,18 +87,26 @@ def _make_crosssection_fig(sub: pd.DataFrame, cfg: dict) -> go.Figure:
             spec = next(c for c in cfg["comparators"] if c["slug"] == slug)
             colors.append(spec.get("color"))
 
+    labels = sub["kunta_label_fi"].tolist()
+    means = sub["mean"].tolist()
+    cis = sub["ci95"].fillna(0).tolist()
+
     fig = go.Figure(go.Bar(
-        x=sub["mean"], y=sub["kunta_label_fi"], orientation="h",
+        x=means,
+        y=labels,
+        orientation="h",
         marker=dict(color=colors),
-        text=[_euro(v) for v in sub["mean"]],
+        error_x=dict(type="data", array=cis, visible=True, thickness=1.1, width=4, color="#3E4C59"),
+        text=[_euro(v) for v in means],
         textposition="outside",
-        hovertemplate="%{y}: <b>%{x:.2f}</b><extra></extra>",
+        hovertemplate="%{y}: <b>%{x:.2f}</b> ±%{customdata:.2f}<extra></extra>",
+        customdata=cis,
     ))
     fig.update_layout(
-        height=80 + 45 * len(sub),
+        height=80 + 50 * len(labels),
         margin=dict(l=120, r=40, t=10, b=40),
         xaxis=dict(range=[1, 5], title="Keskiarvo (1–5)", gridcolor="#E4E7EB", tickformat=".2f"),
-        yaxis=dict(autorange="reversed", title=None),
+        yaxis=dict(type="category", categoryorder="array", categoryarray=labels[::-1], title=None),
         plot_bgcolor="white",
         separators=", ",
     )
@@ -155,7 +172,10 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         else:
             fig = _make_crosssection_fig(sub, cfg)
         # Plotly figure as JSON for client-side render
-        fig_json = json.dumps(fig.to_plotly_json(), default=str)
+        # to_plotly_json() returns numpy arrays as-is; convert to plain lists so
+        # the Plotly JS reader receives proper arrays (not stringified numpy).
+        import plotly.io as pio
+        fig_json = pio.to_json(fig, validate=False, remove_uids=True)
         m = metric_lookup.get(ind_id, {})
         cards.append({
             "id": ind_id,
@@ -190,7 +210,9 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
         header { padding: 24px 32px 12px; border-bottom: 1px solid #CBD2D9; background: white; }
         header h1 { margin: 0; font-size: 22px; }
-        header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+        header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 70em; }
+        header p.ci-note { margin-top: 10px; padding: 10px 14px; background: #FFF7E6; border-left: 4px solid #D55E00; color: #1F2933; font-size: 13.5px; line-height: 1.45; }
+        header p.ci-note strong { color: #1F2933; }
         .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 14px 32px; background: white; border-bottom: 1px solid #CBD2D9; position: sticky; top: 0; z-index: 10; }
         .controls label { font-size: 13px; color: var(--muted); margin-right: 6px; }
         .controls select, .controls input { font-size: 14px; padding: 6px 10px; border: 1px solid #CBD2D9; border-radius: 6px; }
@@ -210,6 +232,7 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
       <header>
         <h1>Kuntabarometri – __FOCAL__ vs vertailukunnat</h1>
         <p>Aikasarja 2022–2026 teemoittain (13) ja poikkileikkaus 2026 alakysymyksittäin. __ATTRIB__</p>
+        <p class="ci-note"><strong>Lue virhepalkit näin:</strong> Pylväät ja viivat näyttävät vastausten keskiarvon (asteikko 1–5). Niitä ympäröivät virhepalkit ovat <em>95 %:n luottamusvälejä</em>. Jos kahden kunnan virhepalkit <strong>eivät leikkaa toisiaan</strong>, ero on tilastollisesti merkitsevä (p&nbsp;&lt;&nbsp;0,05). Jos ne leikkaavat, ero voi silti olla todellinen – pieni otos vain rajoittaa varmuutta. Pienissä kunnissa (esim. Hamina ~90 vastaajaa) virhepalkit ovat luonnostaan suuremmat kuin koko maan koonnissa (~12 000 vastaajaa).</p>
       </header>
       <div class="controls">
         <label>Hae: <input type="search" id="search" placeholder="kysymyksen tai teeman osa..."/></label>

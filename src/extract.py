@@ -12,6 +12,9 @@ Output schema (long format, one row per data point)::
     kunta_label_fi     "Hamina" | "Kotka" | "Kouvola" | "Koko maa"
     mean               weighted mean of Likert 1-5
     n                  count of respondents (sum of Likert counts excluding "En osaa sanoa")
+    sd                 standard deviation of the Likert distribution
+    se                 standard error of the mean (sd / sqrt(n))
+    ci95               half-width of the 95% confidence interval (1.96 * se)
 """
 
 from __future__ import annotations
@@ -42,6 +45,24 @@ class Row:
     kunta_label_fi: str
     mean: float | None
     n: int
+    sd: float | None = None
+    se: float | None = None
+    ci95: float | None = None
+
+
+def _mean_sd_se_from_counts(counts: dict[int, float]) -> tuple[float | None, float | None, float | None, float | None, int]:
+    """Return (mean, sd, se, ci95, n) for a {score: count} dict."""
+    n_total = sum(counts.values())
+    if n_total <= 0:
+        return None, None, None, None, 0
+    mean = sum(score * c for score, c in counts.items()) / n_total
+    variance = sum(((score - mean) ** 2) * c for score, c in counts.items()) / n_total
+    sd = variance ** 0.5
+    # SE of the mean uses n - we round to int respondents
+    n_int = int(round(n_total))
+    se = sd / (n_int ** 0.5) if n_int > 0 else None
+    ci95 = 1.96 * se if se is not None else None
+    return mean, sd, se, ci95, n_int
 
 
 # ---------------------------------------------------------------------------
@@ -49,22 +70,23 @@ class Row:
 # ---------------------------------------------------------------------------
 
 
-def _category_means(chart: dict) -> list[tuple[str, float | None, int]]:
-    """Return [(category_name, mean, n), ...] for one chart payload."""
+def _category_stats(chart: dict) -> list[tuple[str, dict[int, float]]]:
+    """Return [(category_name, {score: count}), ...] for one askia chart payload.
+
+    Lets the caller compute mean/SD/CI from the per-Likert distribution and
+    also aggregate across categories (e.g. national Koko maa pool).
+    """
     cats = [c.get("name") if isinstance(c, dict) else c for c in chart.get("categories", [])]
     series = chart.get("series", [])
     likert_series = [s for s in series if isinstance(s, dict) and _safe_score(s.get("name")) is not None]
-    out: list[tuple[str, float | None, int]] = []
+    out: list[tuple[str, dict[int, float]]] = []
     for i, name in enumerate(cats):
-        total_weighted = 0.0
-        n = 0
+        counts: dict[int, float] = {}
         for s in likert_series:
             score = _safe_score(s.get("name"))
             cnt = s["data"][i] if i < len(s.get("data", [])) else 0
-            total_weighted += score * cnt
-            n += cnt
-        mean = (total_weighted / n) if n else None
-        out.append((name or "", mean, int(n)))
+            counts[score] = counts.get(score, 0) + cnt
+        out.append((name or "", counts))
     return out
 
 
@@ -85,69 +107,54 @@ def _safe_score(name) -> int | None:
     return int(m.group(1))
 
 
-def _kokomaa_mean(category_means: list[tuple[str, float | None, int]]) -> tuple[float | None, int]:
-    """Weighted mean across all individual kunta rows (excludes 'Keskiarvo (...)' rows)."""
-    total = 0.0
-    n = 0
-    for name, mean, cnt in category_means:
+def _kokomaa_stats(category_stats: list[tuple[str, dict[int, float]]]) -> tuple[float | None, float | None, float | None, float | None, int]:
+    """Pool counts across all individual kunta rows (excludes 'Keskiarvo (...)' rows)."""
+    pooled: dict[int, float] = {}
+    for name, counts in category_stats:
         if not name or name.startswith("Keskiarvo"):
             continue
-        if mean is None:
-            continue
-        total += mean * cnt
-        n += cnt
-    return (total / n, n) if n else (None, 0)
+        for k, v in counts.items():
+            pooled[k] = pooled.get(k, 0) + v
+    return _mean_sd_se_from_counts(pooled)
 
 
-def _find_kunta_row(category_means: list[tuple[str, float | None, int]], kunta_label: str) -> tuple[float | None, int]:
-    for name, mean, cnt in category_means:
-        if name and name.startswith(kunta_label + " "):
-            return mean, cnt
-        if name == kunta_label:
-            return mean, cnt
-    return None, 0
+def _find_kunta_stats(category_stats: list[tuple[str, dict[int, float]]], kunta_label: str) -> tuple[float | None, float | None, float | None, float | None, int]:
+    for name, counts in category_stats:
+        if name and (name == kunta_label or name.startswith(kunta_label + " ")):
+            return _mean_sd_se_from_counts(counts)
+    return None, None, None, None, 0
 
 
 def askia_rows(json_path: Path, theme: dict, year: int, focal: dict, comparators: list[dict]) -> Iterable[Row]:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
-    # payload is a list; chart is the dict where type=='chart'
     chart_item = next((c for c in payload if isinstance(c, dict) and c.get("type") == "chart"), None)
     if chart_item is None or not chart_item.get("output"):
         return
     chart = chart_item["output"][0]
-    cat_means = _category_means(chart)
+    cat_stats = _category_stats(chart)
 
-    # Focal kunta
-    mean, n = _find_kunta_row(cat_means, focal["label"])
-    yield Row(
-        source_type="timeseries",
-        kind="theme",
-        indicator_id=theme["askia_rows"],
-        indicator_label_fi=theme["label_fi"],
-        theme_label_fi=theme["label_fi"],
-        year=year,
-        kunta_slug=focal["slug"],
-        kunta_label_fi=focal["label"],
-        mean=mean,
-        n=n,
-    )
-    for comp in comparators:
-        if comp.get("is_aggregate"):
-            cmean, cn = _kokomaa_mean(cat_means)
-        else:
-            cmean, cn = _find_kunta_row(cat_means, comp["label"])
-        yield Row(
+    def _row(kunta_slug: str, kunta_label: str, stats: tuple) -> Row:
+        mean, sd, se, ci95, n = stats
+        return Row(
             source_type="timeseries",
             kind="theme",
             indicator_id=theme["askia_rows"],
             indicator_label_fi=theme["label_fi"],
             theme_label_fi=theme["label_fi"],
             year=year,
-            kunta_slug=comp["slug"],
-            kunta_label_fi=comp["label"],
-            mean=cmean,
-            n=cn,
+            kunta_slug=kunta_slug,
+            kunta_label_fi=kunta_label,
+            mean=mean,
+            n=n,
+            sd=sd,
+            se=se,
+            ci95=ci95,
         )
+
+    yield _row(focal["slug"], focal["label"], _find_kunta_stats(cat_stats, focal["label"]))
+    for comp in comparators:
+        stats = _kokomaa_stats(cat_stats) if comp.get("is_aggregate") else _find_kunta_stats(cat_stats, comp["label"])
+        yield _row(comp["slug"], comp["label"], stats)
 
 
 # ---------------------------------------------------------------------------
@@ -159,32 +166,56 @@ def _strip_year_suffix(s: str) -> str:
     return TRAILING_YEAR_PATTERN.sub("", s).strip()
 
 
-def _pptx_chart_mean(chart) -> tuple[float | None, int, str | None]:
-    """Compute the focal (first) category's mean from a PPTX chart.
+def _pptx_chart_focal_stats(chart) -> tuple[float | None, float | None, float | None, float | None, int, str | None]:
+    """Return (mean, sd, se, ci95, n, focal_cat_label) for the first category.
 
-    PPTX charts have shape: each series corresponds to a Likert score level
-    ("5 ...", "4 ...", "3 ...", "2 ...", "1 ...", optionally "En osaa sanoa"),
-    each series.data has one value per category, values are percentages.
+    PPTX bar-stacked charts have one series per Likert score (named
+    "5 Kehittynyt ...", "4 Kehittynyt ...", ..., "1 Kehittynyt ...") plus
+    optionally an "En osaa sanoa" series. Each series.data[i] is a
+    percentage value summing to 100 across all series for category i.
 
-    The category labels in PPTX charts also include the mean in form '(ka=X.XX)' —
-    we parse that directly rather than recomputing.
+    We recover counts by multiplying percentages with the total n parsed
+    from the category label '(n = X)'. We then compute the mean, SD, SE
+    and 95 % CI ourselves rather than trusting the displayed '(ka=...)'
+    rounding.
     """
-    cats: list[str] = []
     try:
         plot = chart.plots[0]
         cats = [str(c) for c in plot.categories]
     except Exception:
-        cats = []
-    means: list[float | None] = []
-    ns: list[int] = []
-    for cat in cats:
+        return None, None, None, None, 0, None
+    if not cats:
+        return None, None, None, None, 0, None
+
+    focal_idx = 0
+    cat = cats[focal_idx]
+    n_match = re.search(r"n\s*=\s*([\d\s]+)", cat)
+    n_total = int(n_match.group(1).replace(" ", "")) if n_match else 0
+    if n_total == 0:
+        return None, None, None, None, 0, cat
+
+    counts: dict[int, float] = {}
+    for s in chart.series:
+        score = _safe_score(s.name)
+        if score is None:
+            continue
+        try:
+            vals = list(s.values)
+        except Exception:
+            continue
+        if focal_idx >= len(vals) or vals[focal_idx] is None:
+            continue
+        pct = float(vals[focal_idx])
+        counts[score] = counts.get(score, 0) + (pct / 100.0) * n_total
+    mean, sd, se, ci95, n = _mean_sd_se_from_counts(counts)
+    # Fallback: if no Likert series were named "N ..." (e.g. counts chart),
+    # parse the printed (ka=...) so we at least keep the mean.
+    if mean is None:
         m = re.search(r"ka=([-\d,\.]+)", cat)
-        n_match = re.search(r"n\s*=\s*([\d\s]+)", cat)
-        means.append(float(m.group(1).replace(",", ".")) if m else None)
-        ns.append(int(n_match.group(1).replace(" ", "")) if n_match else 0)
-    if means and means[0] is not None:
-        return means[0], ns[0], cats[0] if cats else None
-    return None, 0, cats[0] if cats else None
+        if m:
+            mean = float(m.group(1).replace(",", "."))
+            n = n_total
+    return mean, sd, se, ci95, n, cat
 
 
 def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 2026) -> Iterable[Row]:
@@ -206,10 +237,9 @@ def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 20
             label = _strip_year_suffix(title)
             if not label:
                 continue
-            mean, n, focal_cat_text = _pptx_chart_mean(ch)
+            mean, sd, se, ci95, n, _ = _pptx_chart_focal_stats(ch)
             if mean is None:
                 continue
-            # Stable id: derived from cleaned title, deduped if needed
             base_id = re.sub(r"[^a-z0-9]+", "_", label.lower())[:60].strip("_")
             count = seen_titles.get(base_id, 0)
             seen_titles[base_id] = count + 1
@@ -225,6 +255,9 @@ def pptx_rows(pptx_path: Path, kunta_slug: str, kunta_label: str, year: int = 20
                 kunta_label_fi=kunta_label,
                 mean=mean,
                 n=n,
+                sd=sd,
+                se=se,
+                ci95=ci95,
             )
 
 
@@ -246,8 +279,15 @@ def write_csv(rows: Iterable[Row], dest: Path) -> int:
         "kunta_label_fi",
         "mean",
         "n",
+        "sd",
+        "se",
+        "ci95",
     ]
     count = 0
+
+    def _fmt(v):
+        return "" if v is None else f"{v:.6f}"
+
     with dest.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -262,8 +302,11 @@ def write_csv(rows: Iterable[Row], dest: Path) -> int:
                     "year": r.year,
                     "kunta_slug": r.kunta_slug,
                     "kunta_label_fi": r.kunta_label_fi,
-                    "mean": "" if r.mean is None else f"{r.mean:.6f}",
+                    "mean": _fmt(r.mean),
                     "n": r.n,
+                    "sd": _fmt(r.sd),
+                    "se": _fmt(r.se),
+                    "ci95": _fmt(r.ci95),
                 }
             )
             count += 1

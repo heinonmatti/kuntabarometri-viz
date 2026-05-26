@@ -3,28 +3,31 @@ survey_id: "Kuntabarometri_SYR_2026"
 
 years: [2020, 2022, 2024, 2026]
 
+# Okabe-Ito palette — eight colours designed to remain distinguishable
+# across all forms of colour vision deficiency. Hamina chosen warm
+# (vermillion) so it stands out against the cool comparators.
 focal_kunta:
   slug: hamina
   label: "Hamina"
   pptx_source: "kunnat/hamina.pptx"
-  highlight_color: "#C8102E"
+  highlight_color: "#D55E00"  # Okabe-Ito vermillion
 
 comparators:
   - slug: kokomaa
     label: "Koko maa"
     pptx_source: "alueet/kokomaa.pptx"
-    color: "#1F2933"
+    color: "#000000"           # Okabe-Ito black
     style: solid
     is_aggregate: true
   - slug: kotka
     label: "Kotka"
     pptx_source: "kunnat/kotka.pptx"
-    color: "#52606D"
+    color: "#0072B2"           # Okabe-Ito blue
     style: dashed
   - slug: kouvola
     label: "Kouvola"
     pptx_source: "kunnat/kouvola.pptx"
-    color: "#9AA5B1"
+    color: "#009E73"           # Okabe-Ito bluish green
     style: dashed
 
 themes:
