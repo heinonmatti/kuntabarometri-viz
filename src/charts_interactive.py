@@ -371,6 +371,8 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 70em; }
         header p.ci-note { margin-top: 10px; padding: 10px 14px; background: #FFF7E6; border-left: 4px solid #D55E00; color: #1F2933; font-size: 13.5px; line-height: 1.45; }
         header p.ci-note strong { color: #1F2933; }
+        header p.method-note { margin-top: 8px; padding: 10px 14px; background: #EAF4FB; border-left: 4px solid #0072B2; color: #1F2933; font-size: 13px; line-height: 1.45; }
+        header p.method-note strong { color: #1F2933; }
         .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 14px 32px; background: white; border-bottom: 1px solid #CBD2D9; position: sticky; top: 0; z-index: 10; }
         .controls label { font-size: 13px; color: var(--muted); margin-right: 6px; }
         .controls select, .controls input { font-size: 14px; padding: 6px 10px; border: 1px solid #CBD2D9; border-radius: 6px; }
@@ -394,6 +396,7 @@ def render(csv_path: Path, cfg: dict, dest: Path) -> Path:
         <h1>Kuntabarometri – __FOCAL__ vs vertailukunnat</h1>
         <p>Aikasarja 2022–2026 teemoittain (13) ja poikkileikkaus 2026 alakysymyksittäin. __ATTRIB__</p>
         <p class="ci-note"><strong>Lue virhepalkit näin:</strong> Pylväät ja viivat näyttävät vastausten keskiarvon (asteikko 1–5). Niitä ympäröivät virhepalkit ovat <em>95 %:n luottamusvälejä</em>. Jos kahden kunnan virhepalkit <strong>eivät leikkaa toisiaan</strong>, ero on tilastollisesti merkitsevä (p&nbsp;&lt;&nbsp;0,05). Jos ne leikkaavat, ero voi silti olla todellinen – pieni otos vain rajoittaa varmuutta. Pienissä kunnissa (esim. Hamina ~90 vastaajaa) virhepalkit ovat luonnostaan suuremmat kuin koko maan koonnissa (~12 000 vastaajaa).</p>
+        <p class="method-note"><strong>Huom. teema-aikasarjojen laskenta:</strong> Teema-arvot (esim. Infrastruktuuri, Hankinnat) lasketaan tällä sivustolla <em>vastaustasolla</em>: kaikki teeman alakysymyksien vastaukset yhdistetään ja niistä lasketaan keskiarvo. Tämä on ainoa tapa saada vertailukelpoinen aikasarja vuosille 2022–2026, sillä Yrittäjät julkaisee tarkemman, <em>vastaajatasolla</em> lasketun teemaindeksin (vastaajan oma keskiarvo teemansa kysymyksistä) vain uusimmasta vuodesta. Tämän vuoksi täällä näkyvät teema-arvot saattavat poiketa muutamilla sadasosilla virallisen tulosportaalin vastaavista vuoden 2026 arvoista – ero on aggregointitapa, ei eri data.</p>
       </header>
       <div class="controls">
         <label>Hae: <input type="search" id="search" placeholder="kysymyksen tai teeman osa..."/></label>
